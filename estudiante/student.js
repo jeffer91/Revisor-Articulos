@@ -72,7 +72,7 @@
   $('#start-review').addEventListener('click',()=>{
     if(!file)return;
     if(student.available<=0){toast('No tienes revisiones disponibles.','danger');return;}
-    $('#attempts-confirm').innerHTML=`<strong>Revisiones disponibles: ${student.available}</strong><div class="small">Si no se alcanzan 3 IA exitosas, el intento no se descuenta.</div>`;
+    $('#attempts-confirm').innerHTML=`<strong>Revisiones disponibles: ${student.available}</strong><div class="small">Si no se alcanzan 3 proveedores exitosos, el intento no se descuenta.</div>`;
     modal('confirm-review-modal');
   });
 
@@ -80,17 +80,44 @@
   const progress=i=>{$('#process-progress').style.width=`${Math.round(i/labels.length*100)}%`;$('#process-steps').innerHTML=labels.map((l,x)=>`<div class="step ${x<i?'done':x===i?'active':''}"><div class="step-icon">${x<i?'✓':x+1}</div><div class="step-text"><strong>${l}</strong><span>${x<i?'Completado':x===i?'Procesando…':'Pendiente'}</span></div></div>`).join('');};
   const showResult=r=>{result=r;tab='academico';V.resultCards(r);$$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.resultTab==='academico'));V.panel(r,'academico',D.rubric);nav('resultado');};
 
+  async function extractPdfText(sourceFile){
+    if(!window.pdfjsLib) throw new Error('No se pudo cargar el lector PDF. Recarga la página e intenta nuevamente.');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const data=new Uint8Array(await sourceFile.arrayBuffer());
+    const pdf=await window.pdfjsLib.getDocument({data}).promise;
+    const pages=[];
+    for(let i=1;i<=pdf.numPages;i++){
+      const page=await pdf.getPage(i);
+      const content=await page.getTextContent();
+      const text=content.items.map(item=>item.str||'').join(' ').replace(/\s+/g,' ').trim();
+      pages.push(`\n[Página ${i}]\n${text}`);
+    }
+    return pages.join('\n').trim();
+  }
+
+  async function extractDocxText(sourceFile){
+    if(!window.mammoth) throw new Error('No se pudo cargar el lector DOCX. Recarga la página e intenta nuevamente.');
+    const arrayBuffer=await sourceFile.arrayBuffer();
+    const out=await window.mammoth.extractRawText({arrayBuffer});
+    return String(out.value||'').trim();
+  }
+
+  async function extractArticleText(sourceFile){
+    if(/\.pdf$/i.test(sourceFile.name)) return extractPdfText(sourceFile);
+    if(/\.docx$/i.test(sourceFile.name)) return extractDocxText(sourceFile);
+    throw new Error('Formato no compatible.');
+  }
+
   async function runReal(){
     modal('confirm-review-modal',false);
-    if(!config.API_BASE_URL){
-      toast('El servicio de revisión con IA todavía no está conectado al backend seguro.','danger');
-      return;
-    }
+    if(!config.API_BASE_URL){toast('El servicio de revisión con IA no está conectado.','danger');return;}
     nav('proceso'); progress(0);
     try{
-      const f=new FormData(); f.append('file',file); f.append('cedula',student.cedula);
-      const start=await api('/reviews',{method:'POST',body:f});
-      let status,i=1;
+      const articleText=await extractArticleText(file);
+      if(articleText.length<700) throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
+      progress(1);
+      const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:student.cedula,fileName:file.name,articleText})});
+      let status,i=2;
       do{
         await new Promise(r=>setTimeout(r,1800));
         status=await api(`/reviews/${start.id}/status`);
@@ -98,13 +125,16 @@
       }while(!['complete','incomplete','failed'].includes(status.status));
       if(status.status==='complete'){
         const r=await api(`/reviews/${start.id}`);
+        r.n=(student.reviews?.length||0)+1;
         student.reviews.push(r); student.used++; student.available--;
-        saveStudentState(); refresh(); showResult(r); toast('Revisión completada.','success');
+        saveStudentState(); refresh(); showResult(r); toast(`Revisión completada con ${r.reviewers} proveedores exitosos.`,'success');
       }else{
-        nav('nueva'); toast('No fue posible completar la revisión. Tu intento no fue descontado. Intenta nuevamente más tarde.','danger');
+        nav('nueva');
+        toast(status.message || 'No fue posible completar la revisión. Tu intento no fue descontado.','danger');
       }
     }catch(err){
-      console.error(err); nav('nueva'); toast('No fue posible completar la revisión. Tu intento no fue descontado.','danger');
+      console.error(err); nav('nueva');
+      toast(err.message || 'No fue posible completar la revisión. Tu intento no fue descontado.','danger');
     }
   }
   $('#confirm-start').addEventListener('click',runReal);
