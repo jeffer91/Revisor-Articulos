@@ -5,7 +5,6 @@
 
   const apiBase = String(config.API_BASE_URL).replace(/\/$/,'');
 
-  // Valida el acceso en el backend antes de que admin.js procese el submit local.
   form.addEventListener('submit', async event => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -30,7 +29,11 @@
     }
   }, true);
 
-  // Una vez autenticado, sincroniza el catálogo visible del Administrador con el backend.
+  document.getElementById('logout')?.addEventListener('click',()=>{
+    sessionStorage.removeItem('revisor_token');
+    sessionStorage.removeItem('revisor_admin_auth');
+  },true);
+
   async function syncModels() {
     if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
     const token = sessionStorage.getItem('revisor_token');
@@ -65,6 +68,18 @@
         });
         localStorage.setItem('revisor_models',JSON.stringify(merged));
       }
+
+      // Sube al backend las claves que ya estaban guardadas en esta sesión del navegador.
+      // El servidor no las devuelve y no se escriben en GitHub.
+      await Promise.all(local.map(async m => {
+        const key = sessionStorage.getItem(`revisor_key_${m.id}`);
+        if (!key) return;
+        await fetch(`${apiBase}/admin/models/${encodeURIComponent(m.id)}`, {
+          method:'PUT',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
+          body:JSON.stringify({apiKey:key})
+        }).catch(()=>null);
+      }));
     } catch (err) {
       console.warn('No se pudo sincronizar el catálogo con el backend:',err);
     }
