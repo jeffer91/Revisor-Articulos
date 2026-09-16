@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estudiante · Revisión Académica ITSQMET</title>
+  <link rel="icon" href="../assets/logo.svg" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+  <div id="student-login-view" class="login-shell">
+    <section class="login-panel">
+      <img class="logo" src="../assets/logo.svg" alt="ITSQMET" />
+      <div class="gold-line"></div>
+      <h1>Revisión de artículos</h1>
+      <p>Ingresa tu cédula para continuar.</p>
+      <form id="student-login" class="grid" autocomplete="off">
+        <div class="field"><label for="student-id">Cédula</label><input id="student-id" class="input" inputmode="numeric" maxlength="10" required /></div>
+        <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
+        <button id="student-demo" class="btn btn-outline btn-block hidden" type="button">Entrar en modo demostración</button>
+        <div id="student-login-msg" class="small muted"></div>
+      </form>
+    </section>
+    <aside class="login-visual"><div class="login-visual-inner"><div class="gold-line"></div><h2>Sube, revisa y mejora</h2><p>Recibe una evaluación académica sobre 100 puntos, un análisis separado de similitud y una estimación orientativa de posible uso de IA.</p></div></aside>
+  </div>
+
+  <div id="student-app-view" class="hidden">
+    <div class="brand-strip"></div>
+    <header class="topbar"><div class="topbar-inner">
+      <a class="brand" href="#inicio" data-nav="inicio"><img src="../assets/logo.svg" alt="ITSQMET"><div class="brand-text"><strong>Revisión Académica</strong><span>Estudiante</span></div></a>
+      <button class="menu-toggle" aria-label="Menú">☰</button>
+      <nav class="top-nav"><a href="#inicio" data-nav="inicio" class="active">Inicio</a><a href="#nueva" data-nav="nueva">Nueva revisión</a><a href="#mis" data-nav="mis">Mis revisiones</a><a href="#comparar" data-nav="comparar">Comparar</a><a href="#ayuda" data-nav="ayuda">Ayuda</a></nav>
+      <div class="user-actions"><span id="student-name-pill" class="user-pill">Estudiante</span><button id="student-logout" class="btn btn-outline btn-sm">Salir</button></div>
+    </div></header>
+
+    <main class="container">
+      <section id="student-section-inicio" class="section active">
+        <div class="page-title"><div><h1 id="welcome-title">Hola</h1><p>Revisa el estado de tu artículo y tus intentos disponibles.</p></div><span id="student-demo-badge" class="badge badge-warning hidden"><span class="dot"></span>Modo demostración</span></div>
+        <div class="grid grid-4" id="student-summary"></div>
+        <div class="grid grid-2" style="margin-top:18px">
+          <div class="card"><h3>Próximo paso</h3><p>Sube tu versión actual para ejecutar la revisión académica, referencias, similitud y posible uso de IA.</p><button class="btn btn-primary" data-nav="nueva">Nueva revisión</button></div>
+          <div class="card"><h3>Última revisión</h3><div id="last-review"></div></div>
+        </div>
+      </section>
+
+      <section id="student-section-nueva" class="section">
+        <div class="page-title"><div><h1>Nueva revisión</h1><p>El intento solo se descuenta si la revisión se completa con al menos 3 IA exitosas.</p></div></div>
+        <div class="grid grid-2">
+          <div class="card">
+            <div id="dropzone" class="dropzone"><div style="font-size:32px">⇧</div><h3>Arrastra tu artículo aquí</h3><p>Formatos aceptados: PDF y DOCX.</p><button class="btn btn-outline" id="choose-file" type="button">Seleccionar archivo</button><input id="article-file" type="file" accept=".pdf,.docx" class="hidden"><div id="selected-file"></div></div>
+            <div style="margin-top:16px"><button id="start-review" class="btn btn-primary btn-block" disabled>Iniciar revisión</button></div>
+          </div>
+          <div class="card"><h3>Qué se revisará</h3><div class="steps">
+            <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Evaluación académica</strong><span>Nota sobre 100 y observaciones por sección.</span></div></div>
+            <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Referencias</strong><span>Existencia, actualidad y respaldo real de la cita.</span></div></div>
+            <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Similitud</strong><span>Resultado separado de la nota académica.</span></div></div>
+            <div class="step"><div class="step-icon">4</div><div class="step-text"><strong>Posible uso de IA</strong><span>Indicador orientativo, independiente de la nota.</span></div></div>
+          </div></div>
+        </div>
+      </section>
+
+      <section id="student-section-proceso" class="section">
+        <div class="page-title"><div><h1>Revisando tu artículo</h1><p>No cierres esta pestaña mientras el análisis está en curso.</p></div></div>
+        <div class="card"><div class="progress"><span id="process-progress" style="width:0%"></span></div><div class="steps" id="process-steps" style="margin-top:20px"></div><div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Privacidad del proceso</strong><div class="small muted">No se muestran los nombres de los modelos que participan. La revisión necesita mínimo 3 y máximo 5 IA exitosas.</div></div></div></div>
+      </section>
+
+      <section id="student-section-resultado" class="section">
+        <div class="page-title"><div><h1>Resultado de tu revisión</h1><p id="result-meta"></p></div><button class="btn btn-outline" id="download-report">Descargar informe</button></div>
+        <div id="critical-alerts"></div>
+        <div class="grid grid-3" id="result-cards" style="margin-top:18px"></div>
+        <div class="card" style="margin-top:18px"><div class="tabs"><button class="tab active" data-result-tab="academico">Académico</button><button class="tab" data-result-tab="plagio">Plagio</button><button class="tab" data-result-tab="ia">Posible IA</button></div><div id="result-panel"></div></div>
+      </section>
+
+      <section id="student-section-mis" class="section"><div class="page-title"><div><h1>Mis revisiones</h1><p>Consulta las versiones revisadas y sus informes.</p></div></div><div id="reviews-list" class="grid grid-3"></div></section>
+
+      <section id="student-section-comparar" class="section"><div class="page-title"><div><h1>Comparar revisiones</h1><p>Identifica mejoras, errores persistentes y nuevas observaciones.</p></div></div><div class="card"><div class="form-grid"><div class="field"><label>Primera revisión</label><select id="compare-a" class="select"></select></div><div class="field"><label>Segunda revisión</label><select id="compare-b" class="select"></select></div></div><div style="margin-top:14px"><button id="compare-btn" class="btn btn-primary">Comparar</button></div><div id="compare-result" style="margin-top:20px"></div></div></section>
+
+      <section id="student-section-ayuda" class="section"><div class="page-title"><div><h1>Ayuda</h1><p>Información rápida para usar el sistema.</p></div></div><div class="grid grid-2"><div class="card"><h3>Intentos</h3><p>Cada estudiante inicia con 3 revisiones. Si el sistema no consigue al menos 3 IA exitosas, el intento no se descuenta.</p></div><div class="card"><h3>Resultados separados</h3><p>La nota académica, la similitud y la estimación de posible IA son resultados independientes.</p></div><div class="card"><h3>Referencias</h3><p>Las referencias deben ser reales y, salvo autores o teorías clásicas indispensables, corresponder a los últimos 5 años.</p></div><div class="card"><h3>Formato</h3><p>El cumplimiento formal se contrasta con la plantilla oficial de Revista ÉLITE. ORCID y el año provisional de la revista no se penalizan.</p></div></div></section>
+    </main>
+  </div>
+
+  <div id="confirm-review-modal" class="modal"><div class="modal-backdrop"></div><div class="modal-panel" style="max-width:560px"><div class="modal-head"><h3>¿Iniciar revisión?</h3><button class="btn btn-ghost" data-close-modal="confirm-review-modal">✕</button></div><div class="modal-body"><p>Esta revisión utilizará 1 intento únicamente si el proceso finaliza correctamente.</p><div id="attempts-confirm" class="alert alert-info"></div></div><div class="modal-foot"><button class="btn btn-outline" data-close-modal="confirm-review-modal">Cancelar</button><button id="confirm-start" class="btn btn-primary">Iniciar</button></div></div></div>
+
+  <script src="../assets/config.js"></script><script src="../assets/common.js"></script><script src="student-data.js"></script><script src="student-view.js"></script><script src="student.js"></script>
+</body>
+</html>
