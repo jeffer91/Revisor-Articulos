@@ -1,21 +1,216 @@
 (() => {
-  const { $, $$, api, toast, modal, config }=window.Revisor,V=window.AdminView,seed=window.ADMIN_DEMO_DATA;
-  let models=JSON.parse(localStorage.getItem('revisor_models')||'null')||seed.models,students=structuredClone(seed.students),reviews=structuredClone(seed.reviews),alerts=structuredClone(seed.alerts),demo=false;
-  const save=()=>localStorage.setItem('revisor_models',JSON.stringify(models));
-  const render=()=>{V.dashboard(models,students,reviews,alerts);V.models(models,$('#model-search')?.value||'',$('#model-status')?.value||'');V.students(students,$('#student-search')?.value||'');V.reviews(reviews,$('#review-search')?.value||'',$('#review-status')?.value||'');V.stats(models,reviews);V.alerts(alerts);};
-  const showApp=(d=false)=>{demo=d;$('#login-view').classList.add('hidden');$('#app-view').classList.remove('hidden');$('#demo-badge').classList.toggle('hidden',!d);render();};
-  $('#admin-login').addEventListener('submit',async e=>{e.preventDefault();$('#admin-login-msg').textContent='Validando credenciales…';try{const d=await api('/auth/admin',{method:'POST',body:JSON.stringify({usuario:$('#admin-user').value.trim(),pin:$('#admin-pin').value.trim()})});sessionStorage.setItem('revisor_token',d.token||'');showApp();}catch(err){if(err.message==='BACKEND_NOT_CONFIGURED'){ $('#admin-login-msg').textContent='El backend seguro todavía no está configurado. Usa el modo demostración para revisar la interfaz.';$('#admin-demo').classList.remove('hidden');}else $('#admin-login-msg').textContent='Credenciales inválidas o servicio no disponible.';}});
-  $('#admin-demo').addEventListener('click',()=>showApp(true));$('#logout').addEventListener('click',()=>location.reload());if(config.DEMO_MODE)$('#admin-demo').classList.remove('hidden');
-  const nav=n=>{$$('.section').forEach(s=>s.classList.remove('active'));$(`#section-${n}`)?.classList.add('active');$$('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===n));$('.top-nav')?.classList.remove('open');history.replaceState?.(null,'',`#${n}`);};
-  document.addEventListener('click',e=>{const n=e.target.closest('[data-nav]');if(n){e.preventDefault();nav(n.dataset.nav);}});
-  const set=(id,v)=>$(id).value=v??'';
-  function openModel(m=null){$('#model-modal-title').textContent=m?'Editar IA':'Agregar IA';set('#model-id',m?.id);set('#model-name',m?.name);set('#model-provider',m?.provider);set('#model-model',m?.model);set('#model-endpoint',m?.endpoint);set('#model-key','');set('#model-priority',m?.priority||models.length+1);set('#model-weight',m?.weight??1);set('#model-state',m?.state||'Activa');set('#model-specialty',m?.specialty);set('#model-timeout',m?.timeout||90);set('#model-temperature',m?.temperature??.2);set('#model-tokens',m?.tokens||6000);set('#model-review-type',m?.reviewType||'General');set('#model-prompt',m?.prompt);modal('model-modal');}
-  $('#model-form').addEventListener('submit',async e=>{e.preventDefault();const id=$('#model-id').value||`model-${Date.now()}`,old=models.find(m=>m.id===id),m={...(old||{}),id,name:$('#model-name').value.trim(),provider:$('#model-provider').value.trim(),model:$('#model-model').value.trim(),endpoint:$('#model-endpoint').value.trim(),priority:+$('#model-priority').value,weight:+$('#model-weight').value,state:$('#model-state').value,specialty:$('#model-specialty').value.trim(),timeout:+$('#model-timeout').value,temperature:+$('#model-temperature').value,tokens:+$('#model-tokens').value,reviewType:$('#model-review-type').value,prompt:$('#model-prompt').value,lastTest:old?.lastTest||'Sin probar'};if(demo){old?Object.assign(old,m):models.push(m);save();render();modal('model-modal',false);toast('IA guardada en modo demostración.','success');}else try{await api(old?`/admin/models/${id}`:'/admin/models',{method:old?'PUT':'POST',body:JSON.stringify({...m,apiKey:$('#model-key').value||undefined})});modal('model-modal',false);toast('IA guardada.','success');}catch{toast('No fue posible guardar la IA.','danger');}});
-  async function testModel(id){const m=models.find(x=>x.id===id);if(!m)return;modal('test-modal');$('#test-result').innerHTML=`<div class="alert alert-info"><strong>Probando ${m.name}…</strong></div>`;if(demo){await new Promise(r=>setTimeout(r,700));m.lastTest='Correcta';save();render();$('#test-result').innerHTML=`<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">1.8s</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">428</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>Se detectó una afirmación metodológica que debería explicitar población, instrumento y procedimiento.</p></div>`;}else try{const d=await api(`/admin/models/${id}/test`,{method:'POST'});$('#test-result').innerHTML=`<div class="alert alert-success"><strong>IA operativa</strong></div><pre>${JSON.stringify(d,null,2)}</pre>`;}catch(err){$('#test-result').innerHTML=`<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${err.message}</div></div>`;}}
-  function manageStudent(id){const s=students.find(x=>x.id===id);if(!s)return;$('#student-modal-body').innerHTML=`<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${s.used}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${s.available}</div></div></div><h3 style="margin-top:20px">${s.name}</h3><p class="muted">${s.cedula} · ${s.career}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${id}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${id}">Restaurar intento</button></div><div class="small muted">Restaurar un intento no elimina el historial.</div>`;modal('student-modal');}
-  function viewReview(id){const r=reviews.find(x=>x.id===id);if(!r)return;$('#review-modal-body').innerHTML=`<div class="grid grid-3"><div class="card"><div class="score-big">${r.score??'—'}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud</div><div class="metric-value">${r.plagiarism!=null?r.plagiarism+'%':'—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai!=null?r.ai+'%':'—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${r.status}</strong><div class="small muted">${r.reviewers} IA exitosas. ${r.status==='Incompleta'?'El intento no fue descontado.':'Observaciones consolidadas.'}</div></div></div>`;modal('review-modal');}
-  document.addEventListener('click',e=>{if(e.target.closest('#add-model-btn'))openModel();const edit=e.target.closest('[data-edit-model]');if(edit)openModel(models.find(m=>m.id===edit.dataset.editModel));const test=e.target.closest('[data-test-model]');if(test)testModel(test.dataset.testModel);const tog=e.target.closest('[data-toggle-model]');if(tog){const m=models.find(x=>x.id===tog.dataset.toggleModel);m.state=m.state==='Activa'?'Inactiva':'Activa';save();render();}const mg=e.target.closest('[data-manage-student]');if(mg)manageStudent(mg.dataset.manageStudent);const add=e.target.closest('[data-add-attempt]');if(add){const s=students.find(x=>x.id===add.dataset.addAttempt);s.available++;render();manageStudent(s.id);toast('Revisión adicional asignada.','success');}const rs=e.target.closest('[data-restore-attempt]');if(rs){const s=students.find(x=>x.id===rs.dataset.restoreAttempt);if(s.used>0)s.used--;s.available++;render();manageStudent(s.id);toast('Intento restaurado.','success');}const vr=e.target.closest('[data-view-review]');if(vr)viewReview(vr.dataset.viewReview);});
-  ['model-search','student-search','review-search'].forEach(id=>$('#'+id).addEventListener('input',render));['model-status','review-status'].forEach(id=>$('#'+id).addEventListener('change',render));
-  $('#export-summary').addEventListener('click',()=>{const csv=['Estudiante,Cedula,Nota,Plagio,Posible IA,Estado',...reviews.map(r=>`${r.student},${r.cedula},${r.score??''},${r.plagiarism??''},${r.ai??''},${r.status}`)].join('\n'),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='resumen-revisiones.csv';a.click();URL.revokeObjectURL(a.href);});
-  const initial=(location.hash||'#inicio').slice(1);if(['inicio','ias','estudiantes','revisiones','informes','estadisticas','alertas'].includes(initial))nav(initial);
+  const { $, $$, api, firebaseGetStudent, toast, modal, config } = window.Revisor;
+  const V = window.AdminView;
+  const seed = window.ADMIN_DEMO_DATA;
+
+  let models = JSON.parse(localStorage.getItem('revisor_models') || 'null') || seed.models;
+  let students = JSON.parse(localStorage.getItem('revisor_known_students') || '[]');
+  let reviews = [];
+  let alerts = JSON.parse(localStorage.getItem('revisor_alerts') || '[]');
+
+  const saveModels = () => localStorage.setItem('revisor_models', JSON.stringify(models));
+  const saveStudents = () => localStorage.setItem('revisor_known_students', JSON.stringify(students));
+  const saveAlerts = () => localStorage.setItem('revisor_alerts', JSON.stringify(alerts));
+  const stateKey = cedula => `revisor_student_state_${cedula}`;
+  const loadState = cedula => { try { return JSON.parse(localStorage.getItem(stateKey(cedula)) || 'null'); } catch { return null; } };
+  const saveState = (cedula, state) => localStorage.setItem(stateKey(cedula), JSON.stringify(state));
+
+  function syncReviews() {
+    reviews = [];
+    students.forEach(s => {
+      const st = loadState(s.cedula) || {used:0,available:3,reviews:[]};
+      s.used = Number.isFinite(st.used) ? st.used : 0;
+      s.available = Number.isFinite(st.available) ? st.available : Math.max(0, 3 - s.used);
+      s.lastReview = st.reviews?.at(-1)?.date || '';
+      (st.reviews || []).forEach(r => reviews.push({
+        ...r,
+        student: s.name,
+        cedula: s.cedula,
+        status: r.status || 'Completa',
+        reviewers: r.reviewers || 0
+      }));
+    });
+  }
+
+  const render = () => {
+    syncReviews();
+    V.dashboard(models, students, reviews, alerts);
+    V.models(models, $('#model-search')?.value || '', $('#model-status')?.value || '');
+    V.students(students, $('#student-search')?.value || '');
+    V.reviews(reviews, $('#review-search')?.value || '', $('#review-status')?.value || '');
+    V.stats(models, reviews);
+    V.alerts(alerts);
+  };
+
+  const showApp = () => {
+    $('#login-view').classList.add('hidden');
+    $('#app-view').classList.remove('hidden');
+    render();
+  };
+
+  const sha256 = async text => {
+    const bytes = new TextEncoder().encode(text);
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,'0')).join('');
+  };
+
+  $('#admin-login').addEventListener('submit', async e => {
+    e.preventDefault();
+    const usuario = $('#admin-user').value.trim();
+    const pin = $('#admin-pin').value.trim();
+    $('#admin-login-msg').textContent = 'Validando credenciales…';
+    try {
+      const hash = await sha256(`${usuario}:${pin}`);
+      if (hash !== config.ADMIN_LOGIN_HASH) {
+        $('#admin-login-msg').textContent = 'Usuario o PIN incorrectos.';
+        return;
+      }
+      sessionStorage.setItem('revisor_admin_auth','1');
+      $('#admin-login-msg').textContent = '';
+      showApp();
+    } catch {
+      $('#admin-login-msg').textContent = 'No fue posible validar el acceso.';
+    }
+  });
+
+  $('#logout').addEventListener('click', () => {
+    sessionStorage.removeItem('revisor_admin_auth');
+    location.reload();
+  });
+  if (sessionStorage.getItem('revisor_admin_auth') === '1') showApp();
+
+  const nav = n => {
+    $$('.section').forEach(s => s.classList.remove('active'));
+    $(`#section-${n}`)?.classList.add('active');
+    $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === n));
+    $('.top-nav')?.classList.remove('open');
+    history.replaceState?.(null,'',`#${n}`);
+  };
+  document.addEventListener('click', e => {
+    const n = e.target.closest('[data-nav]');
+    if (n) { e.preventDefault(); nav(n.dataset.nav); }
+  });
+
+  const set = (id,v) => $(id).value = v ?? '';
+  function openModel(m=null) {
+    $('#model-modal-title').textContent = m ? 'Editar IA' : 'Agregar IA';
+    set('#model-id',m?.id); set('#model-name',m?.name); set('#model-provider',m?.provider);
+    set('#model-model',m?.model); set('#model-endpoint',m?.endpoint); set('#model-key','');
+    set('#model-priority',m?.priority || models.length+1); set('#model-weight',m?.weight ?? 1);
+    set('#model-state',m?.state || 'Activa'); set('#model-specialty',m?.specialty);
+    set('#model-timeout',m?.timeout || 90); set('#model-temperature',m?.temperature ?? .2);
+    set('#model-tokens',m?.tokens || 6000); set('#model-review-type',m?.reviewType || 'General');
+    set('#model-prompt',m?.prompt); modal('model-modal');
+  }
+
+  $('#model-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = $('#model-id').value || `model-${Date.now()}`;
+    const old = models.find(m => m.id === id);
+    const m = {
+      ...(old || {}), id,
+      name: $('#model-name').value.trim(), provider: $('#model-provider').value.trim(),
+      model: $('#model-model').value.trim(), endpoint: $('#model-endpoint').value.trim(),
+      priority: +$('#model-priority').value, weight: +$('#model-weight').value,
+      state: $('#model-state').value, specialty: $('#model-specialty').value.trim(),
+      timeout: +$('#model-timeout').value, temperature: +$('#model-temperature').value,
+      tokens: +$('#model-tokens').value, reviewType: $('#model-review-type').value,
+      prompt: $('#model-prompt').value, lastTest: old?.lastTest || 'Sin probar'
+    };
+    const key = $('#model-key').value.trim();
+    if (key) sessionStorage.setItem(`revisor_key_${id}`, key);
+    try {
+      if (config.API_BASE_URL) {
+        await api(old ? `/admin/models/${id}` : '/admin/models', {
+          method: old ? 'PUT' : 'POST', body: JSON.stringify({...m, apiKey:key || undefined})
+        });
+      }
+      old ? Object.assign(old,m) : models.push(m);
+      saveModels(); render(); modal('model-modal',false); toast('IA guardada.','success');
+    } catch (err) { toast(`No fue posible guardar la IA: ${err.message}`,'danger'); }
+  });
+
+  async function directTestModel(m,id) {
+    const key = sessionStorage.getItem(`revisor_key_${id}`);
+    if (!m.endpoint) throw new Error('Configura el endpoint del modelo.');
+    if (!key && !/ollama/i.test(m.provider)) throw new Error('Ingresa la API key en Editar IA antes de probar.');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), (m.timeout || 90) * 1000);
+    const started = performance.now();
+    const isGemini = /gemini/i.test(m.provider) || /generativelanguage/i.test(m.endpoint);
+    const url = isGemini && key && !m.endpoint.includes('key=') ? `${m.endpoint}${m.endpoint.includes('?')?'&':'?'}key=${encodeURIComponent(key)}` : m.endpoint;
+    const headers = {'Content-Type':'application/json'};
+    if (!isGemini && key) headers.Authorization = `Bearer ${key}`;
+    const prompt = 'Revisa académicamente esta frase de prueba e identifica una mejora metodológica: “Se aplicó una encuesta y los resultados fueron positivos”. Responde brevemente.';
+    const body = isGemini
+      ? {contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:m.temperature ?? .2,maxOutputTokens:Math.min(m.tokens || 6000,800)}}
+      : {model:m.model,messages:[{role:'user',content:prompt}],temperature:m.temperature ?? .2,max_tokens:Math.min(m.tokens || 6000,800)};
+    try {
+      const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal:controller.signal});
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(data?.error?.message || data?.message || `HTTP ${res.status}`);
+      const text = isGemini ? data?.candidates?.[0]?.content?.parts?.[0]?.text : data?.choices?.[0]?.message?.content;
+      return {time:((performance.now()-started)/1000).toFixed(1),tokens:data?.usage?.total_tokens ?? '—',text:text || 'Respuesta recibida correctamente.'};
+    } finally { clearTimeout(timer); }
+  }
+
+  async function testModel(id) {
+    const m = models.find(x => x.id === id); if (!m) return;
+    modal('test-modal'); $('#test-result').innerHTML = `<div class="alert alert-info"><strong>Probando ${m.name}…</strong></div>`;
+    try {
+      const d = config.API_BASE_URL ? await api(`/admin/models/${id}/test`,{method:'POST'}) : await directTestModel(m,id);
+      m.lastTest = 'Correcta'; saveModels(); render();
+      $('#test-result').innerHTML = `<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">${d.time || 'OK'}</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">${d.tokens ?? '—'}</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>${d.text || d.response || 'Respuesta recibida correctamente.'}</p></div>`;
+    } catch(err) {
+      m.lastTest = 'Error'; saveModels(); render();
+      $('#test-result').innerHTML = `<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${err.message}</div></div>`;
+    }
+  }
+
+  async function lookupStudent() {
+    const q = $('#student-search').value.trim();
+    if (!/^\d{10}$/.test(q) || students.some(s => s.cedula === q)) return;
+    try {
+      const d = await firebaseGetStudent(q); if (!d) return;
+      const s = {id:q,cedula:q,name:d.nombres || 'Estudiante',career:d.nombreCarreraActual || '',used:0,available:3,lastReview:'',status:'Activo'};
+      students.push(s); saveStudents(); render(); toast('Estudiante cargado desde Firebase.','success');
+    } catch(err) { console.warn(err); }
+  }
+
+  function manageStudent(id) {
+    const s = students.find(x => x.id === id); if (!s) return;
+    $('#student-modal-body').innerHTML = `<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${s.used}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${s.available}</div></div></div><h3 style="margin-top:20px">${s.name}</h3><p class="muted">${s.cedula} · ${s.career}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${id}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${id}">Restaurar intento</button></div><div class="small muted">Restaurar un intento no elimina el historial.</div>`;
+    modal('student-modal');
+  }
+
+  function viewReview(id) {
+    const r = reviews.find(x => x.id === id); if (!r) return;
+    $('#review-modal-body').innerHTML = `<div class="grid grid-3"><div class="card"><div class="score-big">${r.score ?? '—'}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud</div><div class="metric-value">${r.plagiarism != null ? r.plagiarism+'%' : '—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai != null ? r.ai+'%' : '—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${r.status}</strong><div class="small muted">${r.reviewers} IA exitosas.</div></div></div>`;
+    modal('review-modal');
+  }
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('#add-model-btn')) openModel();
+    const edit=e.target.closest('[data-edit-model]'); if(edit) openModel(models.find(m=>m.id===edit.dataset.editModel));
+    const test=e.target.closest('[data-test-model]'); if(test) testModel(test.dataset.testModel);
+    const tog=e.target.closest('[data-toggle-model]'); if(tog){const m=models.find(x=>x.id===tog.dataset.toggleModel);m.state=m.state==='Activa'?'Inactiva':'Activa';saveModels();render();}
+    const mg=e.target.closest('[data-manage-student]'); if(mg) manageStudent(mg.dataset.manageStudent);
+    const add=e.target.closest('[data-add-attempt]'); if(add){const s=students.find(x=>x.id===add.dataset.addAttempt);const st=loadState(s.cedula)||{used:0,available:3,reviews:[]};st.available=(st.available ?? 3)+1;saveState(s.cedula,st);render();manageStudent(s.id);toast('Revisión adicional asignada.','success');}
+    const rs=e.target.closest('[data-restore-attempt]'); if(rs){const s=students.find(x=>x.id===rs.dataset.restoreAttempt);const st=loadState(s.cedula)||{used:0,available:3,reviews:[]};if(st.used>0)st.used--;st.available=(st.available ?? 3)+1;saveState(s.cedula,st);render();manageStudent(s.id);toast('Intento restaurado.','success');}
+    const vr=e.target.closest('[data-view-review]'); if(vr) viewReview(vr.dataset.viewReview);
+  });
+
+  $('#model-search').addEventListener('input',render);
+  $('#student-search').addEventListener('input',()=>{render();lookupStudent();});
+  $('#review-search').addEventListener('input',render);
+  $('#model-status').addEventListener('change',render);
+  $('#review-status').addEventListener('change',render);
+
+  $('#export-summary').addEventListener('click',()=>{
+    const csv=['Estudiante,Cedula,Nota,Plagio,Posible IA,Estado',...reviews.map(r=>`${r.student},${r.cedula},${r.score??''},${r.plagiarism??''},${r.ai??''},${r.status}`)].join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='resumen-revisiones.csv';a.click();URL.revokeObjectURL(a.href);
+  });
+
+  const initial=(location.hash||'#inicio').slice(1);
+  if(['inicio','ias','estudiantes','revisiones','informes','estadisticas','alertas'].includes(initial)) nav(initial);
 })();
