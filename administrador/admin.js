@@ -95,9 +95,22 @@
 
   function compactModelForm() {
     const grid = $('#model-form .form-grid');
-    if (!grid || grid.dataset.compact === '1') return;
-    grid.dataset.compact = '1';
+    if (!grid) return;
     const field = id => $(id)?.closest('.field');
+
+    if (grid.dataset.compact === '1') {
+      const main = grid.querySelector('.model-main-fields');
+      const endpointField = field('#model-endpoint');
+      const keyField = field('#model-key');
+      if (main && endpointField && endpointField.parentElement !== main) {
+        endpointField.classList.remove('full');
+        endpointField.classList.add('compact-wide');
+        main.insertBefore(endpointField, keyField || null);
+      }
+      return;
+    }
+
+    grid.dataset.compact = '1';
     const reviewTypeField = field('#model-review-type');
     const reviewLabel = reviewTypeField?.querySelector('label');
     if (reviewLabel) reviewLabel.textContent = 'Función';
