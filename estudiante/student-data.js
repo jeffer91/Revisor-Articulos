@@ -2,17 +2,75 @@ window.STUDENT_DEMO_DATA = (() => {
   const rubric=[
     ['Título y delimitación',4,3.8],['Resumen, Abstract y palabras clave',6,5.6],['Introducción, antecedentes y problema',10,8.9],['Objetivos y coherencia',6,5.8],['Metodología',16,12.2],['Resultados',12,10.6],['Discusión',8,6.9],['Conclusiones y recomendaciones',6,5.4],['Referencias',7,5.7],['Redacción y coherencia global',5,4.4],['Formato institucional ÉLITE',20,15.5]
   ];
-  const observations=[
-    {severity:'Crítico',section:'Metodología',points:3,page:'Página 4',title:'Operacionalización incompleta de variables',original:'Se estimó una regresión lineal múltiple con las variables del estudio.',problem:'No se explica con suficiente precisión cómo se construye la puntuación de cada variable usada en el modelo.',why:'La ausencia de una regla de cálculo clara limita la reproducibilidad del análisis.',fix:'Definir dimensiones, indicadores, escala y procedimiento de cálculo de cada variable.',proposal:'Especificar los ítems o indicadores que componen cada variable y el procedimiento usado para obtener la puntuación final.'},
-    {severity:'Alto',section:'Metodología',points:1.5,page:'Página 4',title:'Supuestos estadísticos no documentados',original:'Se calculó la correlación de Pearson y una regresión lineal múltiple.',problem:'No se reporta la comprobación de supuestos relevantes para las pruebas empleadas.',why:'La validez de los resultados depende de que los análisis sean adecuados para los datos.',fix:'Reportar las comprobaciones correspondientes y el criterio aplicado.',proposal:'Añadir el procedimiento utilizado para revisar linealidad, distribución, homocedasticidad y multicolinealidad cuando corresponda.'},
-    {severity:'Alto',section:'Referencias',points:1,page:'Referencias',title:'Verificación bibliográfica requerida',original:'Una referencia presenta datos que deben verificarse en la fuente primaria.',problem:'La referencia debe contrastarse con autor, año, título, DOI/URL y contenido real.',why:'Una referencia inexistente o que no respalda la afirmación es una alerta crítica de integridad.',fix:'Abrir la fuente original y corregir o sustituir la referencia.',proposal:'Mantener únicamente fuentes reales y verificables; salvo clásicos indispensables, priorizar los últimos cinco años.'},
-    {severity:'Medio',section:'Discusión',points:.7,page:'Página 6',title:'Profundizar la interpretación',original:'Los resultados coinciden con investigaciones anteriores.',problem:'La discusión compara resultados, pero puede explicar mejor los mecanismos o razones de las coincidencias y diferencias.',why:'Una discusión académica debe interpretar, no solo repetir o comparar.',fix:'Incorporar explicaciones sustentadas y posibles variables alternativas.',proposal:'Relacionar cada hallazgo principal con evidencia previa y explicar qué puede justificar la convergencia o divergencia observada.'}
-  ];
-  const reviews=[
-    {id:'d1',n:1,date:'2026-09-10T10:20:00-05:00',file:'articulo_version_1.docx',score:71.3,plagiarism:18,ai:27,reviewers:4,approved:true,categories:rubric.map((r,i)=>[r[0],r[1],Math.max(0,r[2]-(i%3===0?1.2:.6))]),errors:12},
-    {id:'d2',n:2,date:'2026-09-16T08:15:00-05:00',file:'articulo_version_2.docx',score:84.8,plagiarism:12,ai:18,reviewers:5,approved:true,categories:rubric,errors:7}
-  ];
-  const student={id:'demo',name:'Estudiante Demo',cedula:'0000000000',career:'Carrera demostrativa',used:2,available:1,reviews};
-  const makeResult=(file,n)=>({id:`demo-${Date.now()}`,n,date:new Date().toISOString(),file,score:84.8,approved:true,reviewers:5,plagiarism:12,plagiarismRisk:'Bajo',ai:18,aiRisk:'Bajo',categories:rubric,observations,critical:['La metodología requiere precisar la construcción de las variables antes de considerar el artículo completamente cerrado.'],plagiarismMatches:[{type:'Coincidencia para revisar',page:'Página 3',source:'Fuente académica localizada',fragment:'Fragmento con similitud léxica que debe revisarse para confirmar que la paráfrasis y la cita sean adecuadas.'}],aiFlags:[{level:'Bajo',page:'Página 2',fragment:'Párrafo con estructura muy uniforme.',reason:'Uniformidad estilística y conectores repetitivos. Este indicador no demuestra uso de IA.'}]});
+  const observations=[];
+  const reviews=[];
+  const student={id:'',name:'',cedula:'',career:'',used:0,available:3,reviews};
+  const makeResult=()=>null;
   return {rubric,observations,student,makeResult};
+})();
+
+// Convierte PDF/DOCX a texto en el navegador y envía solo texto al backend seguro.
+// Así las API keys permanecen en el servidor y no se exponen en GitHub Pages.
+(() => {
+  const R = window.Revisor;
+  if (!R?.api) return;
+  const originalApi = R.api;
+
+  const loadScript = (src, globalName) => new Promise((resolve,reject) => {
+    if (globalName && window[globalName]) return resolve(window[globalName]);
+    const existing = [...document.scripts].find(s => s.src === src);
+    if (existing) {
+      existing.addEventListener('load',()=>resolve(globalName?window[globalName]:true),{once:true});
+      existing.addEventListener('error',()=>reject(new Error('No se pudo cargar el lector de documentos.')),{once:true});
+      return;
+    }
+    const s=document.createElement('script');
+    s.src=src; s.async=true;
+    s.onload=()=>resolve(globalName?window[globalName]:true);
+    s.onerror=()=>reject(new Error('No se pudo cargar el lector de documentos.'));
+    document.head.appendChild(s);
+  });
+
+  async function extractPdf(file) {
+    const pdfjs = await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js','pdfjsLib');
+    pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjs.getDocument({data}).promise;
+    const parts=[];
+    for(let p=1;p<=doc.numPages;p++){
+      const page=await doc.getPage(p);
+      const content=await page.getTextContent();
+      const text=(content.items||[]).map(i=>i.str||'').join(' ').replace(/\s+/g,' ').trim();
+      parts.push(`\n[Página ${p}]\n${text}`);
+    }
+    return parts.join('\n').trim();
+  }
+
+  async function extractDocx(file) {
+    const mammoth = await loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js','mammoth');
+    const result = await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
+    return String(result.value||'').trim();
+  }
+
+  async function extractFile(file) {
+    const name=String(file?.name||'').toLowerCase();
+    if(name.endsWith('.pdf')) return extractPdf(file);
+    if(name.endsWith('.docx')) return extractDocx(file);
+    throw new Error('Solo se aceptan archivos PDF o DOCX.');
+  }
+
+  R.api = async (path, options={}) => {
+    if (path === '/reviews' && options.body instanceof FormData) {
+      const file = options.body.get('file');
+      const cedula = String(options.body.get('cedula')||'').trim();
+      if (!(file instanceof File)) throw new Error('No se encontró el archivo seleccionado.');
+      const articleText = await extractFile(file);
+      if (articleText.length < 700) throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
+      return originalApi('/reviews',{
+        method:'POST',
+        body:JSON.stringify({cedula,fileName:file.name,articleText})
+      });
+    }
+    return originalApi(path,options);
+  };
 })();
