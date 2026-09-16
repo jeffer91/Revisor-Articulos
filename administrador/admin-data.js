@@ -2,10 +2,10 @@ window.ADMIN_DEMO_DATA = (() => {
   const catalog = [
     ['Gemini 3.8 Flash','Gemini API','General','Excelente','gemini-3.8-flash','https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent'],
     ['GPT-OSS 120B','Groq','Metodología','Excelente','openai/gpt-oss-120b','https://api.groq.com/openai/v1/chat/completions'],
-    ['GPT-OSS 120B','Cerebras','Razonamiento / estadística','Excelente','gpt-oss-120b','https://api.cerebras.ai/v1/chat/completions'],
     ['Mistral Small','Mistral AI','Redacción académica','Muy buena','mistral-small-latest','https://api.mistral.ai/v1/chat/completions'],
     ['Gemma 4 31B','NVIDIA NIM','Revisor crítico','Excelente','google/gemma-4-31b-it','https://integrate.api.nvidia.com/v1/chat/completions'],
     ['GLM 4.7 Flash','Cloudflare Workers AI','Coherencia / formato','Muy buena','@cf/zai-org/glm-4.7-flash','https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions'],
+    ['GPT-OSS 120B','Cerebras','Razonamiento / estadística','Excelente','gpt-oss-120b','https://api.cerebras.ai/v1/chat/completions'],
     ['OpenRouter Free','OpenRouter','Respaldo dinámico','Respaldo','openrouter/free','https://openrouter.ai/api/v1/chat/completions'],
     ['Apertus 1.5 8B','Public AI','Contraste / respaldo','Secundaria','swiss-ai/apertus-v1.5-8b','https://api.publicai.co/v1/chat/completions']
   ];
@@ -20,7 +20,7 @@ window.ADMIN_DEMO_DATA = (() => {
 })();
 
 (() => {
-  const CATALOG_VERSION = '2026-09-16-ai-catalog-v6-diverse-providers';
+  const CATALOG_VERSION = '2026-09-16-ai-catalog-v7-diverse-providers';
   try {
     if (localStorage.getItem('revisor_models_catalog_version') === CATALOG_VERSION) return;
     const previous = JSON.parse(localStorage.getItem('revisor_models') || '[]');
@@ -36,8 +36,6 @@ window.ADMIN_DEMO_DATA = (() => {
         if (exact) migrated.lastTest = old.lastTest || 'Sin probar';
         migrated.state = old.state === 'Inactiva' ? 'Inactiva' : 'Activa';
       }
-
-      // Conserva las claves ya ingresadas cuando el proveedor se mantiene.
       const keySource = [old, ...previous.filter(m => m.provider === base.provider)].filter(Boolean)
         .find(m => sessionStorage.getItem(`revisor_key_${m.id}`));
       if (keySource) {
@@ -53,7 +51,6 @@ window.ADMIN_DEMO_DATA = (() => {
   }
 })();
 
-// Diferencia saturación temporal de errores de configuración en las pruebas del Administrador.
 (() => {
   const script = document.createElement('script');
   script.src = 'admin-fixes.js';
