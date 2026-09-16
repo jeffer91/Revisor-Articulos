@@ -1,5 +1,5 @@
 window.REVISOR_CONFIG = {
-  API_BASE_URL: "https://revisor-articulos-api.onrender.com",
+  API_BASE_URL: "https://revisor-articulos-api-v2.onrender.com",
 
   FIREBASE: {
     apiKey: "AIzaSyCaHf1C0BB0X_H3BDZ1o-UDAsPmLTjsZLA",
