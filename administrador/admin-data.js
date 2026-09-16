@@ -6,7 +6,7 @@ window.ADMIN_DEMO_DATA = (() => {
   const catalog = [
     ['Gemini 3.8 Flash','Gemini API','General','Excelente','gemini-3.8-flash',GEMINI_ENDPOINT],
     ['GPT-OSS 120B','Groq','Metodología','Excelente','openai/gpt-oss-120b',GROQ_ENDPOINT],
-    ['Inkling','OpenRouter','General','Excelente','thinkingmachines/inkling',OPENROUTER_ENDPOINT],
+    ['Gemma 4 31B Free','OpenRouter','General','Excelente','google/gemma-4-31b-it:free',OPENROUTER_ENDPOINT],
     ['Gemma 4 31B','OpenRouter','Redacción académica','Excelente','google/gemma-4-31b-it',OPENROUTER_ENDPOINT],
     ['Gemma 4 26B A4B','OpenRouter','Coherencia','Excelente','google/gemma-4-26b-a4b-it',OPENROUTER_ENDPOINT],
     ['Nemotron 3 Ultra','OpenRouter','Metodología','Excelente','nvidia/nemotron-3-ultra-550b-a55b',OPENROUTER_ENDPOINT],
@@ -33,32 +33,19 @@ window.ADMIN_DEMO_DATA = (() => {
 
   const models = catalog.map((m,i)=>({
     id:`model-${i+1}`,
-    name:m[0],
-    provider:m[1],
-    specialty:m[2],
-    reviewType:m[2],
-    level:m[3],
-    model:m[4],
-    endpoint:m[5],
-    priority:i+1,
-    weight:1,
-    state:'Activa',
-    lastTest:'Sin probar',
-    timeout:90,
-    temperature:.2,
-    tokens:6000,
-    prompt:''
+    name:m[0], provider:m[1], specialty:m[2], reviewType:m[2], level:m[3],
+    model:m[4], endpoint:m[5], priority:i+1, weight:1, state:'Activa',
+    lastTest:'Sin probar', timeout:90, temperature:.2, tokens:6000, prompt:''
   }));
   return {models,students:[],reviews:[],alerts:[]};
 })();
 
 (() => {
-  const CATALOG_VERSION = '2026-09-16-ai-catalog-v4';
+  const CATALOG_VERSION = '2026-09-16-ai-catalog-v5';
   try {
     if (localStorage.getItem('revisor_models_catalog_version') === CATALOG_VERSION) return;
     const previous = JSON.parse(localStorage.getItem('revisor_models') || '[]');
     const aliases = {
-      'Inkling':'Thinking Machines Inkling',
       'Nemotron 3 Ultra':'NVIDIA Nemotron 3 Ultra',
       'Nemotron 3 Super':'NVIDIA Nemotron 3 Super',
       'Nemotron 3.5 Lightning':'NVIDIA Nemotron 3.5 Lightning',
@@ -73,7 +60,7 @@ window.ADMIN_DEMO_DATA = (() => {
         if (old[field] !== undefined && old[field] !== null && old[field] !== '') migrated[field] = old[field];
       });
       migrated.lastTest = old.lastTest || 'Sin probar';
-      migrated.state = 'Activa';
+      migrated.state = old.state === 'Inactiva' ? 'Inactiva' : 'Activa';
       const oldKey = sessionStorage.getItem(`revisor_key_${old.id}`);
       if (oldKey) sessionStorage.setItem(`revisor_key_${base.id}`, oldKey);
       return migrated;
@@ -102,8 +89,7 @@ window.ADMIN_DEMO_DATA = (() => {
           return endpoint && (endpoint === normalizedInput || normalizedInput.includes(String(m.model || '')));
         });
         const modelName = String(match?.model || (endpointFromForm && url.includes(endpointFromForm) ? modelFromForm : '') || modelFromForm)
-          .replace(/^models\//i, '')
-          .trim();
+          .replace(/^models\//i, '').trim();
         if (modelName) url = url.replace(/\{modelo\}|\{model\}/gi, modelName);
         const requestUrl = new URL(url);
         const key = requestUrl.searchParams.get('key');
@@ -119,18 +105,17 @@ window.ADMIN_DEMO_DATA = (() => {
       }
     }
     const retryable = status => status === 429 || status === 503;
-    const delays = [0, 1200, 2600];
+    const delays = [0,1200,2600];
     let response;
-    for (let attempt = 0; attempt < delays.length; attempt++) {
+    for (let attempt=0;attempt<delays.length;attempt++) {
       if (delays[attempt]) await wait(delays[attempt]);
       response = await nativeFetch(url || input, init);
-      if (!isGeminiHost || !retryable(response.status) || attempt === delays.length - 1) return response;
+      if (!isGeminiHost || !retryable(response.status) || attempt === delays.length-1) return response;
     }
     return response;
   };
 })();
 
-// Carga el ajuste visual que diferencia saturación temporal de error de configuración.
 (() => {
   const script = document.createElement('script');
   script.src = 'admin-fixes.js';
