@@ -15,6 +15,46 @@
     return data;
   };
 
+  const firestoreValue = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    if ('stringValue' in value) return value.stringValue;
+    if ('booleanValue' in value) return value.booleanValue;
+    if ('integerValue' in value) return Number(value.integerValue);
+    if ('doubleValue' in value) return Number(value.doubleValue);
+    if ('timestampValue' in value) return value.timestampValue;
+    if ('nullValue' in value) return null;
+    if ('arrayValue' in value) return (value.arrayValue.values || []).map(firestoreValue);
+    if ('mapValue' in value) return Object.fromEntries(Object.entries(value.mapValue.fields || {}).map(([k,v]) => [k, firestoreValue(v)]));
+    return null;
+  };
+
+  const parseFirestoreDocument = (doc) => {
+    const out = {};
+    Object.entries(doc?.fields || {}).forEach(([key, value]) => { out[key] = firestoreValue(value); });
+    out._firestoreName = doc?.name || '';
+    out._createTime = doc?.createTime || '';
+    out._updateTime = doc?.updateTime || '';
+    return out;
+  };
+
+  const firebaseGetStudent = async (cedula) => {
+    const fb = config.FIREBASE;
+    if (!fb?.projectId || !fb?.apiKey || !fb?.studentCollection) throw new Error('FIREBASE_NOT_CONFIGURED');
+    const clean = String(cedula || '').trim();
+    if (!/^\d{10}$/.test(clean)) throw new Error('INVALID_CEDULA');
+    const database = encodeURIComponent(fb.databaseId || '(default)');
+    const collection = encodeURIComponent(fb.studentCollection);
+    const documentId = encodeURIComponent(clean);
+    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(fb.projectId)}/databases/${database}/documents/${collection}/${documentId}?key=${encodeURIComponent(fb.apiKey)}`;
+    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (response.status === 404) return null;
+    if (response.status === 403 || response.status === 401) throw new Error('FIREBASE_PERMISSION_DENIED');
+    if (!response.ok) throw new Error(`FIREBASE_HTTP_${response.status}`);
+    const data = parseFirestoreDocument(await response.json());
+    if (!data || data.eliminado === true) return null;
+    return data;
+  };
+
   const toast = (message, type = 'info') => {
     let area = $('#toast-area');
     if (!area) {
@@ -63,5 +103,5 @@
     }
   });
 
-  window.Revisor = { $, $$, api, toast, modal, formatDate, riskClass, config };
+  window.Revisor = { $, $$, api, firebaseGetStudent, parseFirestoreDocument, toast, modal, formatDate, riskClass, config };
 })();
