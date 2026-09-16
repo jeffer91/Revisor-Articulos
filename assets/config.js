@@ -1,9 +1,8 @@
 window.REVISOR_CONFIG = {
-  // Backend seguro para IA, intentos, informes y autenticación administrativa.
-  // Se configurará cuando exista el servicio. Las claves privadas nunca deben ir en GitHub Pages.
+  // Backend seguro para IA, intentos compartidos, informes persistentes y secretos.
+  // Cuando exista, coloca aquí su URL pública.
   API_BASE_URL: "",
 
-  // Firestore público usado únicamente para consultar el registro del estudiante por cédula.
   FIREBASE: {
     apiKey: "AIzaSyCaHf1C0BB0X_H3BDZ1o-UDAsPmLTjsZLA",
     authDomain: "utet-4387a.firebaseapp.com",
@@ -15,8 +14,11 @@ window.REVISOR_CONFIG = {
     studentCollection: "Estudiante"
   },
 
-  // Mantener disponible solo para revisar la interfaz mientras se conecta el backend seguro.
-  DEMO_MODE: true,
+  // Credencial administrativa validada por hash para no publicar el PIN en texto plano.
+  // SHA-256 de usuario:PIN.
+  ADMIN_LOGIN_HASH: "c0d8715a560af5e884b31c8957f8618ef12c2959476f7423e2dbf338872caf9b",
+
+  DEMO_MODE: false,
   INSTITUTION: "ITSQMET",
   APP_NAME: "Revisión Académica"
 };
