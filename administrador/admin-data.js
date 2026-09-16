@@ -1,57 +1,91 @@
 window.ADMIN_DEMO_DATA = (() => {
   const catalog = [
-    ['Gemini 3.8 Flash','Gemini API','Revisión general, metodología, coherencia','gemini-3.8-flash'],
-    ['Gemini 3.7 Flash','Gemini API','Texto largo y análisis','gemini-3.7-flash'],
-    ['Gemini 3.6 Flash','Gemini API','Revisión general rápida','gemini-3.6-flash'],
-    ['NVIDIA Nemotron 3 Ultra','OpenRouter','Razonamiento profundo y documentos largos'],
-    ['NVIDIA Nemotron 3 Super','OpenRouter','Evaluación crítica'],
-    ['Gemma 4 31B','OpenRouter','Comprensión de documentos académicos'],
-    ['Gemma 4 26B A4B','OpenRouter','Estructura, redacción y análisis'],
-    ['Thinking Machines Inkling','OpenRouter','Razonamiento y análisis multidocumento'],
-    ['Inkling Small','OpenRouter','Revisión secundaria ligera'],
-    ['Dots3-Note Preview','OpenRouter','Documentos extensos'],
-    ['Ling 3.0 Flash VL','OpenRouter','Texto, figuras y tablas'],
-    ['Ling 3.0 Flash Sante','OpenRouter','Artículos de salud'],
-    ['Ling 3.0 Flash Fin','OpenRouter','Finanzas y economía'],
-    ['NVIDIA Nemotron 3.5 Lightning','OpenRouter','Revisión rápida'],
-    ['NVIDIA Nemotron 3 Nano Omni','OpenRouter','Multimodal'],
-    ['Nex-N2.5-Pro','OpenRouter','Razonamiento y procesos complejos'],
-    ['Nex-N2.5-Mini','OpenRouter','Revisión rápida secundaria'],
-    ['Poolside Laguna S 2.1','OpenRouter','Revisor adicional'],
-    ['Poolside Laguna XS 2.1','OpenRouter','Revisión secundaria rápida'],
-    ['Cohere North Mini Code','OpenRouter','Contraste adicional'],
-    ['GPT-OSS 120B','Groq / Ollama','Razonamiento académico'],
-    ['GPT-OSS 20B','Groq / Ollama','Revisión académica rápida'],
-    ['Qwen 3.5 27B','Ollama local','Español y razonamiento'],
-    ['Qwen 3.5 9B','Ollama local','Revisión ligera'],
-    ['Gemma 3 27B','Ollama local','Redacción y análisis'],
-    ['Gemma 3 12B','Ollama local','Revisión ligera']
+    ['Gemini 3.8 Flash','Gemini API','General','Excelente','gemini-3.8-flash'],
+    ['GPT-OSS 120B','Groq / Ollama','Metodología','Excelente','gpt-oss-120b'],
+    ['Inkling','OpenRouter','General','Excelente','inkling'],
+    ['Gemma 4 31B','OpenRouter','Redacción académica','Excelente','gemma-4-31b'],
+    ['Gemma 4 26B A4B','OpenRouter','Coherencia','Excelente','gemma-4-26b-a4b'],
+    ['Nemotron 3 Ultra','OpenRouter','Metodología','Excelente','nemotron-3-ultra'],
+    ['Gemini 3.7 Flash','Gemini API','General','Excelente','gemini-3.7-flash'],
+    ['Nemotron 3 Super','OpenRouter','Resultados y discusión','Excelente','nemotron-3-super'],
+    ['Qwen 3.8 27B','Ollama local','Metodología','Muy buena','qwen-3.8-27b'],
+    ['DeepSeek R1 Distill Qwen 32B','OpenRouter / Ollama','Estadística / lógica','Muy buena','deepseek-r1-distill-qwen-32b'],
+    ['GLM 4.7 Flash','OpenRouter','Coherencia','Muy buena','glm-4.7-flash'],
+    ['Gemini 3.6 Flash','Gemini API','General','Muy buena','gemini-3.6-flash'],
+    ['Ling 3.0 Flash VL','OpenRouter','Tablas y figuras','Muy buena','ling-3.0-flash-vl'],
+    ['Nemotron 3.5 Lightning','OpenRouter','Revisor crítico','Buena','nemotron-3.5-lightning'],
+    ['GPT-OSS 20B','Groq / Ollama','Redacción / coherencia','Buena','gpt-oss-20b'],
+    ['Dots3-Note Preview','OpenRouter','Documento completo','Buena, pero temporal','dots3-note-preview'],
+    ['Gemini 3.5 Flash','Gemini API','Redacción','Buena','gemini-3.5-flash'],
+    ['Inkling Small','OpenRouter','Coherencia','Buena','inkling-small'],
+    ['Nemotron 3 Nano Omni','OpenRouter','Tablas / imágenes','Buena','nemotron-3-nano-omni'],
+    ['Ling 3.0 Flash Sante','OpenRouter','Artículos de salud','Excelente en salud','ling-3.0-flash-sante'],
+    ['Ling 3.0 Flash Fin','OpenRouter','Economía / finanzas','Buena especializada','ling-3.0-flash-fin'],
+    ['Nex-N2.5-Pro','OpenRouter','Investigación / contraste','Secundaria','nex-n2.5-pro'],
+    ['Nex-N2.5-Mini','OpenRouter','Investigación / contraste','Secundaria','nex-n2.5-mini'],
+    ['Gemini 3.1 Flash-Lite','Gemini API','Formato / extracción','Secundaria','gemini-3.1-flash-lite'],
+    ['Laguna S 2.1','OpenRouter','Respaldo','No prioritaria para artículos','laguna-s-2.1']
   ];
-  const models = catalog.map((m,i)=>({id:`model-${i+1}`,name:m[0],provider:m[1],specialty:m[2],priority:i+1,weight:1,state:i<5?'Activa':'Inactiva',lastTest:i<5?'Correcta':'Sin probar',model:m[3] || m[0].toLowerCase().replace(/[^a-z0-9]+/g,'-'),endpoint:'',timeout:90,temperature:.2,tokens:6000,reviewType:'General',prompt:''}));
+
+  const models = catalog.map((m,i)=>({
+    id:`model-${i+1}`,
+    name:m[0],
+    provider:m[1],
+    specialty:m[2],
+    reviewType:m[2],
+    level:m[3],
+    model:m[4],
+    priority:i+1,
+    weight:1,
+    state:i<5?'Activa':'Inactiva',
+    lastTest:'Sin probar',
+    endpoint:'',
+    timeout:90,
+    temperature:.2,
+    tokens:6000,
+    prompt:''
+  }));
   return {models,students:[],reviews:[],alerts:[]};
 })();
 
-// Corrige IDs antiguos de Gemini guardados antes de usar la nomenclatura oficial con punto decimal.
+// Migra el catálogo anterior al nuevo orden de 25 IA sin perder la configuración técnica
+// de modelos que continúan en la lista. La prioridad, función, nivel y estado inicial
+// sí se reemplazan por los definidos en el catálogo actual.
 (() => {
+  const CATALOG_VERSION = '2026-09-16-ai-catalog-v3';
   try {
-    const raw = localStorage.getItem('revisor_models');
-    if (!raw) return;
-    const models = JSON.parse(raw);
-    const official = {
-      'Gemini 3.8 Flash':'gemini-3.8-flash',
-      'Gemini 3.7 Flash':'gemini-3.7-flash',
-      'Gemini 3.6 Flash':'gemini-3.6-flash'
+    if (localStorage.getItem('revisor_models_catalog_version') === CATALOG_VERSION) return;
+
+    const previous = JSON.parse(localStorage.getItem('revisor_models') || '[]');
+    const aliases = {
+      'Inkling':'Thinking Machines Inkling',
+      'Nemotron 3 Ultra':'NVIDIA Nemotron 3 Ultra',
+      'Nemotron 3 Super':'NVIDIA Nemotron 3 Super',
+      'Nemotron 3.5 Lightning':'NVIDIA Nemotron 3.5 Lightning',
+      'Nemotron 3 Nano Omni':'NVIDIA Nemotron 3 Nano Omni',
+      'Laguna S 2.1':'Poolside Laguna S 2.1'
     };
-    let changed = false;
-    models.forEach(m => {
-      if (official[m.name] && m.model !== official[m.name]) {
-        m.model = official[m.name];
-        changed = true;
-      }
+
+    const technicalFields = ['endpoint','weight','timeout','temperature','tokens','prompt','lastTest'];
+    const next = window.ADMIN_DEMO_DATA.models.map(base => {
+      const old = previous.find(m => m.name === base.name) || previous.find(m => m.name === aliases[base.name]);
+      if (!old) return {...base};
+
+      const migrated = {...base};
+      technicalFields.forEach(field => {
+        if (old[field] !== undefined && old[field] !== null && old[field] !== '') migrated[field] = old[field];
+      });
+
+      // Conserva endpoint/clave de la IA anterior, pero usa el identificador del nuevo catálogo.
+      const oldKey = sessionStorage.getItem(`revisor_key_${old.id}`);
+      if (oldKey) sessionStorage.setItem(`revisor_key_${base.id}`, oldKey);
+      return migrated;
     });
-    if (changed) localStorage.setItem('revisor_models', JSON.stringify(models));
+
+    localStorage.setItem('revisor_models', JSON.stringify(next));
+    localStorage.setItem('revisor_models_catalog_version', CATALOG_VERSION);
   } catch (err) {
-    console.warn('No se pudieron normalizar los IDs guardados de Gemini:', err);
+    console.warn('No se pudo migrar el catálogo de IA:', err);
   }
 })();
 
@@ -66,16 +100,19 @@ window.ADMIN_DEMO_DATA = (() => {
     }
 
     try {
-      const urlWithoutQuery = url.split('?')[0];
       const stored = JSON.parse(localStorage.getItem('revisor_models') || '[]');
-      const match = stored.find(m => String(m.endpoint || '').split('?')[0] === urlWithoutQuery);
-      const modelName = String(match?.model || document.querySelector('#model-model')?.value || '')
+      const modelFromForm = String(document.querySelector('#model-model')?.value || '').replace(/^models\//i, '').trim();
+      const endpointFromForm = String(document.querySelector('#model-endpoint')?.value || '').trim();
+      const normalizedInput = String(url).split('?')[0];
+      const match = stored.find(m => {
+        const endpoint = String(m.endpoint || '').split('?')[0];
+        return endpoint && (endpoint === normalizedInput || normalizedInput.includes(String(m.model || '')));
+      });
+      const modelName = String(match?.model || (endpointFromForm && url.includes(endpointFromForm) ? modelFromForm : '') || modelFromForm)
         .replace(/^models\//i, '')
         .trim();
 
-      if (modelName) {
-        url = url.replace(/\{modelo\}|\{model\}/gi, modelName);
-      }
+      if (modelName) url = url.replace(/\{modelo\}|\{model\}/gi, modelName);
 
       const requestUrl = new URL(url);
       const key = requestUrl.searchParams.get('key');
