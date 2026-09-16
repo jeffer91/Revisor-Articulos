@@ -103,6 +103,8 @@
     if (reviewLabel) reviewLabel.textContent = 'Función';
     const keyField = field('#model-key');
     keyField?.classList.remove('full');
+    keyField?.classList.add('compact-wide');
+    field('#model-name')?.classList.add('compact-wide');
     const specialtyField = field('#model-specialty');
     specialtyField?.classList.add('hidden');
 
@@ -120,6 +122,36 @@
       const el = field(id); if (el) advanced.appendChild(el);
     });
     grid.replaceChildren(main, details);
+
+    const header = $('#section-ias table thead tr');
+    if (header) header.innerHTML = '<th>IA</th><th>Prioridad</th><th>Función</th><th>Estado</th><th>Prueba</th><th>Acciones</th>';
+
+    if (!$('#model-compact-style')) {
+      const style = document.createElement('style');
+      style.id = 'model-compact-style';
+      style.textContent = `
+        #section-ias .card{padding:15px}
+        #section-ias table{min-width:720px}
+        #section-ias th,#section-ias td{padding:9px 11px}
+        #section-ias .model-row td:first-child{min-width:260px}
+        .priority-pill{display:inline-flex;min-width:34px;justify-content:center;padding:4px 8px;border-radius:999px;background:#f2f4f7;font-size:12px;font-weight:800;color:#475467}
+        #model-modal .modal-panel{width:min(650px,calc(100% - 30px))}
+        #model-modal .modal-body{padding:16px 20px}
+        #model-modal .modal-head,#model-modal .modal-foot{padding:13px 18px}
+        .model-main-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+        .model-main-fields .compact-wide{grid-column:1/-1}
+        .model-main-fields .field{gap:4px}
+        .model-main-fields .input,.model-main-fields .select{padding:8px 10px}
+        .advanced-settings{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:#fafafa;overflow:hidden}
+        .advanced-settings summary{padding:10px 12px;font-size:12px;font-weight:800;color:#475467;cursor:pointer;user-select:none}
+        .advanced-settings[open] summary{border-bottom:1px solid var(--border)}
+        .advanced-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
+        .advanced-settings-grid .field.full{grid-column:1/-1}
+        .advanced-settings-grid .textarea{min-height:72px}
+        @media(max-width:700px){.model-main-fields,.advanced-settings-grid{grid-template-columns:1fr}.model-main-fields .compact-wide,.advanced-settings-grid .field.full{grid-column:auto}}
+      `;
+      document.head.appendChild(style);
+    }
   }
   compactModelForm();
 
