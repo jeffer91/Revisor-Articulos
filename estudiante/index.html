@@ -44,7 +44,7 @@
       </section>
 
       <section id="student-section-nueva" class="section">
-        <div class="page-title"><div><h1>Nueva revisión</h1><p>El intento solo se descuenta si la revisión se completa con al menos 3 IA exitosas.</p></div></div>
+        <div class="page-title"><div><h1>Nueva revisión</h1><p>El intento solo se descuenta si la revisión se completa con al menos 3 proveedores de IA exitosos.</p></div></div>
         <div class="grid grid-2">
           <div class="card">
             <div id="dropzone" class="dropzone"><div style="font-size:32px">⇧</div><h3>Arrastra tu artículo aquí</h3><p>Formatos aceptados: PDF y DOCX.</p><button class="btn btn-outline" id="choose-file" type="button">Seleccionar archivo</button><input id="article-file" type="file" accept=".pdf,.docx" class="hidden"><div id="selected-file"></div></div>
@@ -61,7 +61,7 @@
 
       <section id="student-section-proceso" class="section">
         <div class="page-title"><div><h1>Revisando tu artículo</h1><p>No cierres esta pestaña mientras el análisis está en curso.</p></div></div>
-        <div class="card"><div class="progress"><span id="process-progress" style="width:0%"></span></div><div class="steps" id="process-steps" style="margin-top:20px"></div><div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Privacidad del proceso</strong><div class="small muted">No se muestran los nombres de los modelos que participan. La revisión necesita mínimo 3 y máximo 5 IA exitosas.</div></div></div></div>
+        <div class="card"><div class="progress"><span id="process-progress" style="width:0%"></span></div><div class="steps" id="process-steps" style="margin-top:20px"></div><div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Privacidad del proceso</strong><div class="small muted">No se muestran los nombres de los modelos que participan. La revisión necesita mínimo 3 y máximo 5 proveedores exitosos.</div></div></div></div>
       </section>
 
       <section id="student-section-resultado" class="section">
@@ -75,12 +75,14 @@
 
       <section id="student-section-comparar" class="section"><div class="page-title"><div><h1>Comparar revisiones</h1><p>Identifica mejoras, errores persistentes y nuevas observaciones.</p></div></div><div class="card"><div class="form-grid"><div class="field"><label>Primera revisión</label><select id="compare-a" class="select"></select></div><div class="field"><label>Segunda revisión</label><select id="compare-b" class="select"></select></div></div><div style="margin-top:14px"><button id="compare-btn" class="btn btn-primary">Comparar</button></div><div id="compare-result" style="margin-top:20px"></div></div></section>
 
-      <section id="student-section-ayuda" class="section"><div class="page-title"><div><h1>Ayuda</h1><p>Información rápida para usar el sistema.</p></div></div><div class="grid grid-2"><div class="card"><h3>Intentos</h3><p>Cada estudiante inicia con 3 revisiones. Si el sistema no consigue al menos 3 IA exitosas, el intento no se descuenta.</p></div><div class="card"><h3>Resultados separados</h3><p>La nota académica, la similitud y la estimación de posible IA son resultados independientes.</p></div><div class="card"><h3>Referencias</h3><p>Las referencias deben ser reales y, salvo autores o teorías clásicas indispensables, corresponder a los últimos 5 años.</p></div><div class="card"><h3>Formato</h3><p>El cumplimiento formal se contrasta con la plantilla oficial de Revista ÉLITE. ORCID y el año provisional de la revista no se penalizan.</p></div></div></section>
+      <section id="student-section-ayuda" class="section"><div class="page-title"><div><h1>Ayuda</h1><p>Información rápida para usar el sistema.</p></div></div><div class="grid grid-2"><div class="card"><h3>Intentos</h3><p>Cada estudiante inicia con 3 revisiones. Si el sistema no consigue al menos 3 proveedores exitosos, el intento no se descuenta.</p></div><div class="card"><h3>Resultados separados</h3><p>La nota académica, la similitud y la estimación de posible IA son resultados independientes.</p></div><div class="card"><h3>Referencias</h3><p>Las referencias deben ser reales y, salvo autores o teorías clásicas indispensables, corresponder a los últimos 5 años.</p></div><div class="card"><h3>Formato</h3><p>El cumplimiento formal se contrasta con la plantilla oficial de Revista ÉLITE. ORCID y el año provisional de la revista no se penalizan.</p></div></div></section>
     </main>
   </div>
 
   <div id="confirm-review-modal" class="modal"><div class="modal-backdrop"></div><div class="modal-panel" style="max-width:560px"><div class="modal-head"><h3>¿Iniciar revisión?</h3><button class="btn btn-ghost" data-close-modal="confirm-review-modal">✕</button></div><div class="modal-body"><p>Esta revisión utilizará 1 intento únicamente si el proceso finaliza correctamente.</p><div id="attempts-confirm" class="alert alert-info"></div></div><div class="modal-foot"><button class="btn btn-outline" data-close-modal="confirm-review-modal">Cancelar</button><button id="confirm-start" class="btn btn-primary">Iniciar</button></div></div></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
   <script src="../assets/config.js"></script><script src="../assets/common.js"></script><script src="../assets/ai-policy.js"></script><script src="student-data.js"></script><script src="student-view.js"></script><script src="student.js"></script>
 </body>
 </html>
