@@ -1,0 +1,21 @@
+/* Administrador: gestión compacta de modelos IA */
+#section-ias .ai-card{padding:14px}
+#section-ias .ai-table{min-width:700px}
+#section-ias .ai-table th,#section-ias .ai-table td{padding:8px 10px}
+#section-ias .model-row td:first-child{min-width:250px}
+.priority-pill{display:inline-flex;min-width:34px;justify-content:center;padding:4px 8px;border-radius:999px;background:#f2f4f7;font-size:12px;font-weight:800;color:#475467}
+#model-modal .ai-modal{width:min(620px,calc(100% - 30px))}
+#model-modal .modal-body{padding:14px 18px}
+#model-modal .modal-head,#model-modal .modal-foot{padding:12px 18px}
+#model-modal .form-grid{display:block}
+.model-main-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.model-main-fields .compact-wide{grid-column:1/-1}
+.model-main-fields .field{gap:4px}
+.model-main-fields .input,.model-main-fields .select{padding:8px 10px}
+.advanced-settings{margin-top:12px;border:1px solid var(--border);border-radius:11px;background:#fafafa;overflow:hidden}
+.advanced-settings summary{padding:9px 11px;font-size:12px;font-weight:800;color:#475467;cursor:pointer;user-select:none}
+.advanced-settings[open] summary{border-bottom:1px solid var(--border)}
+.advanced-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:11px}
+.advanced-settings-grid .field.full{grid-column:1/-1}
+.advanced-settings-grid .textarea{min-height:66px}
+@media(max-width:700px){.model-main-fields,.advanced-settings-grid{grid-template-columns:1fr}.model-main-fields .compact-wide,.advanced-settings-grid .field.full{grid-column:auto}}
