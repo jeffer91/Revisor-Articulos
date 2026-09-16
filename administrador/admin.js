@@ -105,12 +105,13 @@
     keyField?.classList.remove('full');
     keyField?.classList.add('compact-wide');
     field('#model-name')?.classList.add('compact-wide');
+    field('#model-endpoint')?.classList.add('compact-wide');
     const specialtyField = field('#model-specialty');
     specialtyField?.classList.add('hidden');
 
     const main = document.createElement('div');
     main.className = 'model-main-fields';
-    ['#model-name','#model-provider','#model-model','#model-key','#model-priority','#model-state','#model-review-type'].forEach(id => {
+    ['#model-name','#model-provider','#model-model','#model-endpoint','#model-key','#model-priority','#model-state','#model-review-type'].forEach(id => {
       const el = field(id); if (el) main.appendChild(el);
     });
 
@@ -118,7 +119,7 @@
     details.className = 'advanced-settings';
     details.innerHTML = '<summary>Configuración avanzada</summary><div class="advanced-settings-grid"></div>';
     const advanced = details.querySelector('.advanced-settings-grid');
-    ['#model-endpoint','#model-weight','#model-timeout','#model-temperature','#model-tokens','#model-prompt','#model-specialty'].forEach(id => {
+    ['#model-weight','#model-timeout','#model-temperature','#model-tokens','#model-prompt','#model-specialty'].forEach(id => {
       const el = field(id); if (el) advanced.appendChild(el);
     });
     grid.replaceChildren(main, details);
