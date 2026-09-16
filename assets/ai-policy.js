@@ -33,11 +33,7 @@
         if (item.status === 'fulfilled') {
           successes.push({model, result:item.value});
         } else {
-          failures.push({
-            model,
-            error:item.reason,
-            temporary:isTemporaryFailure(item.reason)
-          });
+          failures.push({model,error:item.reason,temporary:isTemporaryFailure(item.reason)});
         }
       });
     }
@@ -53,11 +49,24 @@
     };
   }
 
-  window.REVIEW_AI_POLICY = {
-    MIN_SUCCESS,
-    MAX_SUCCESS,
-    sortCandidates,
-    isTemporaryFailure,
-    runWithFallback
+  window.REVIEW_AI_POLICY = {MIN_SUCCESS,MAX_SUCCESS,sortCandidates,isTemporaryFailure,runWithFallback};
+
+  // Informa la política al backend cada vez que el estudiante inicia una revisión.
+  // El backend debe aplicar esta misma lógica: prioridad ascendente, reemplazo automático
+  // y revisión válida solo con 3-5 respuestas exitosas.
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    try {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      const isReviewStart = /\/reviews(?:\?|$)/.test(url) && String(init.method || 'GET').toUpperCase() === 'POST';
+      if (isReviewStart && init.body instanceof FormData) {
+        if (!init.body.has('minSuccessfulReviewers')) init.body.append('minSuccessfulReviewers', String(MIN_SUCCESS));
+        if (!init.body.has('maxSuccessfulReviewers')) init.body.append('maxSuccessfulReviewers', String(MAX_SUCCESS));
+        if (!init.body.has('fallbackByPriority')) init.body.append('fallbackByPriority', 'true');
+      }
+    } catch (err) {
+      console.warn('No se pudo adjuntar la política de revisión:', err);
+    }
+    return nativeFetch(input, init);
   };
 })();
