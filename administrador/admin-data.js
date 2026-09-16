@@ -52,13 +52,10 @@ window.ADMIN_DEMO_DATA = (() => {
   return {models,students:[],reviews:[],alerts:[]};
 })();
 
-// Migra el catálogo anterior al catálogo verificado. Conserva ajustes técnicos del administrador,
-// pero deja todos los modelos disponibles para la lógica de reemplazo por prioridad.
 (() => {
   const CATALOG_VERSION = '2026-09-16-ai-catalog-v4';
   try {
     if (localStorage.getItem('revisor_models_catalog_version') === CATALOG_VERSION) return;
-
     const previous = JSON.parse(localStorage.getItem('revisor_models') || '[]');
     const aliases = {
       'Inkling':'Thinking Machines Inkling',
@@ -68,23 +65,19 @@ window.ADMIN_DEMO_DATA = (() => {
       'Nemotron 3 Nano Omni':'NVIDIA Nemotron 3 Nano Omni',
       'Laguna S 2.1':'Poolside Laguna S 2.1'
     };
-
     const next = window.ADMIN_DEMO_DATA.models.map(base => {
       const old = previous.find(m => m.name === base.name) || previous.find(m => m.name === aliases[base.name]);
       if (!old) return {...base};
       const migrated = {...base};
-      // Solo conserva preferencias que no rompen el proveedor/modelo verificado.
       ['weight','timeout','temperature','tokens','prompt'].forEach(field => {
         if (old[field] !== undefined && old[field] !== null && old[field] !== '') migrated[field] = old[field];
       });
-      // Mantiene el último estado de prueba como referencia, pero todos quedan habilitados para fallback.
       migrated.lastTest = old.lastTest || 'Sin probar';
       migrated.state = 'Activa';
       const oldKey = sessionStorage.getItem(`revisor_key_${old.id}`);
       if (oldKey) sessionStorage.setItem(`revisor_key_${base.id}`, oldKey);
       return migrated;
     });
-
     localStorage.setItem('revisor_models', JSON.stringify(next));
     localStorage.setItem('revisor_models_catalog_version', CATALOG_VERSION);
   } catch (err) {
@@ -92,16 +85,12 @@ window.ADMIN_DEMO_DATA = (() => {
   }
 })();
 
-// Normaliza endpoints configurables de Gemini y reintenta automáticamente errores temporales
-// de saturación (429/503). Esto evita marcar una saturación momentánea como configuración inválida.
 (() => {
   const nativeFetch = window.fetch.bind(window);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
   window.fetch = async (input, init = {}) => {
     let url = typeof input === 'string' ? input : input?.url;
     const isGeminiHost = !!url && /generativelanguage\.googleapis\.com/i.test(url);
-
     if (isGeminiHost) {
       try {
         const stored = JSON.parse(localStorage.getItem('revisor_models') || '[]');
@@ -115,9 +104,7 @@ window.ADMIN_DEMO_DATA = (() => {
         const modelName = String(match?.model || (endpointFromForm && url.includes(endpointFromForm) ? modelFromForm : '') || modelFromForm)
           .replace(/^models\//i, '')
           .trim();
-
         if (modelName) url = url.replace(/\{modelo\}|\{model\}/gi, modelName);
-
         const requestUrl = new URL(url);
         const key = requestUrl.searchParams.get('key');
         const headers = new Headers(init.headers || {});
@@ -131,7 +118,6 @@ window.ADMIN_DEMO_DATA = (() => {
         console.warn('No se pudo normalizar el endpoint de Gemini:', err);
       }
     }
-
     const retryable = status => status === 429 || status === 503;
     const delays = [0, 1200, 2600];
     let response;
@@ -142,4 +128,12 @@ window.ADMIN_DEMO_DATA = (() => {
     }
     return response;
   };
+})();
+
+// Carga el ajuste visual que diferencia saturación temporal de error de configuración.
+(() => {
+  const script = document.createElement('script');
+  script.src = 'admin-fixes.js';
+  script.defer = true;
+  document.head.appendChild(script);
 })();
