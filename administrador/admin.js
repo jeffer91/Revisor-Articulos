@@ -92,6 +92,37 @@
   });
 
   const set = (id,v) => $(id).value = v ?? '';
+
+  function compactModelForm() {
+    const grid = $('#model-form .form-grid');
+    if (!grid || grid.dataset.compact === '1') return;
+    grid.dataset.compact = '1';
+    const field = id => $(id)?.closest('.field');
+    const reviewTypeField = field('#model-review-type');
+    const reviewLabel = reviewTypeField?.querySelector('label');
+    if (reviewLabel) reviewLabel.textContent = 'Función';
+    const keyField = field('#model-key');
+    keyField?.classList.remove('full');
+    const specialtyField = field('#model-specialty');
+    specialtyField?.classList.add('hidden');
+
+    const main = document.createElement('div');
+    main.className = 'model-main-fields';
+    ['#model-name','#model-provider','#model-model','#model-key','#model-priority','#model-state','#model-review-type'].forEach(id => {
+      const el = field(id); if (el) main.appendChild(el);
+    });
+
+    const details = document.createElement('details');
+    details.className = 'advanced-settings';
+    details.innerHTML = '<summary>Configuración avanzada</summary><div class="advanced-settings-grid"></div>';
+    const advanced = details.querySelector('.advanced-settings-grid');
+    ['#model-endpoint','#model-weight','#model-timeout','#model-temperature','#model-tokens','#model-prompt','#model-specialty'].forEach(id => {
+      const el = field(id); if (el) advanced.appendChild(el);
+    });
+    grid.replaceChildren(main, details);
+  }
+  compactModelForm();
+
   function openModel(m=null) {
     $('#model-modal-title').textContent = m ? 'Editar IA' : 'Agregar IA';
     set('#model-id',m?.id); set('#model-name',m?.name); set('#model-provider',m?.provider);
@@ -100,7 +131,9 @@
     set('#model-state',m?.state || 'Activa'); set('#model-specialty',m?.specialty);
     set('#model-timeout',m?.timeout || 90); set('#model-temperature',m?.temperature ?? .2);
     set('#model-tokens',m?.tokens || 6000); set('#model-review-type',m?.reviewType || 'General');
-    set('#model-prompt',m?.prompt); modal('model-modal');
+    set('#model-prompt',m?.prompt);
+    const advanced = $('#model-form .advanced-settings'); if (advanced) advanced.open = false;
+    modal('model-modal');
   }
 
   $('#model-form').addEventListener('submit', async e => {
