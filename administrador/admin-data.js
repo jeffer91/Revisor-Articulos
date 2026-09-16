@@ -1,8 +1,8 @@
 window.ADMIN_DEMO_DATA = (() => {
   const catalog = [
-    ['Gemini 3.8 Flash','Gemini API','Revisión general, metodología, coherencia'],
-    ['Gemini 3.7 Flash','Gemini API','Texto largo y análisis'],
-    ['Gemini 3.6 Flash','Gemini API','Revisión general rápida'],
+    ['Gemini 3.8 Flash','Gemini API','Revisión general, metodología, coherencia','gemini-3.8-flash'],
+    ['Gemini 3.7 Flash','Gemini API','Texto largo y análisis','gemini-3.7-flash'],
+    ['Gemini 3.6 Flash','Gemini API','Revisión general rápida','gemini-3.6-flash'],
     ['NVIDIA Nemotron 3 Ultra','OpenRouter','Razonamiento profundo y documentos largos'],
     ['NVIDIA Nemotron 3 Super','OpenRouter','Evaluación crítica'],
     ['Gemma 4 31B','OpenRouter','Comprensión de documentos académicos'],
@@ -27,11 +27,32 @@ window.ADMIN_DEMO_DATA = (() => {
     ['Gemma 3 27B','Ollama local','Redacción y análisis'],
     ['Gemma 3 12B','Ollama local','Revisión ligera']
   ];
-  const models = catalog.map((m,i)=>({id:`model-${i+1}`,name:m[0],provider:m[1],specialty:m[2],priority:i+1,weight:1,state:i<5?'Activa':'Inactiva',lastTest:i<5?'Correcta':'Sin probar',model:m[0].toLowerCase().replace(/[^a-z0-9]+/g,'-'),endpoint:'',timeout:90,temperature:.2,tokens:6000,reviewType:'General',prompt:''}));
-  const students = [];
-  const reviews = [];
-  const alerts = [];
-  return {models,students,reviews,alerts};
+  const models = catalog.map((m,i)=>({id:`model-${i+1}`,name:m[0],provider:m[1],specialty:m[2],priority:i+1,weight:1,state:i<5?'Activa':'Inactiva',lastTest:i<5?'Correcta':'Sin probar',model:m[3] || m[0].toLowerCase().replace(/[^a-z0-9]+/g,'-'),endpoint:'',timeout:90,temperature:.2,tokens:6000,reviewType:'General',prompt:''}));
+  return {models,students:[],reviews:[],alerts:[]};
+})();
+
+// Corrige IDs antiguos de Gemini guardados antes de usar la nomenclatura oficial con punto decimal.
+(() => {
+  try {
+    const raw = localStorage.getItem('revisor_models');
+    if (!raw) return;
+    const models = JSON.parse(raw);
+    const official = {
+      'Gemini 3.8 Flash':'gemini-3.8-flash',
+      'Gemini 3.7 Flash':'gemini-3.7-flash',
+      'Gemini 3.6 Flash':'gemini-3.6-flash'
+    };
+    let changed = false;
+    models.forEach(m => {
+      if (official[m.name] && m.model !== official[m.name]) {
+        m.model = official[m.name];
+        changed = true;
+      }
+    });
+    if (changed) localStorage.setItem('revisor_models', JSON.stringify(models));
+  } catch (err) {
+    console.warn('No se pudieron normalizar los IDs guardados de Gemini:', err);
+  }
 })();
 
 // Normaliza endpoints configurables de Gemini antes de enviarlos.
