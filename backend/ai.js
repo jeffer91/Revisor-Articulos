@@ -63,7 +63,9 @@ function extractJson(text){
 }
 function validateReviewShape(x){
   if(!x||typeof x!=='object')throw new Error('Respuesta académica inválida.');
-  if(!Array.isArray(x.categories)||x.categories.length<8)throw new Error('La IA devolvió una rúbrica incompleta.');
+  // El motor híbrido pide solo las categorías de cada carril. Una respuesta parcial es válida
+  // siempre que incluya al menos una categoría; hybrid.js verifica y consolida las categorías pertinentes.
+  if(!Array.isArray(x.categories)||x.categories.length<1)throw new Error('La IA no devolvió categorías evaluables.');
   if(!Array.isArray(x.observations))x.observations=[];
   return x;
 }
@@ -93,7 +95,7 @@ function extractResponseText(data,gemini){
 async function repairStructuredResponse({model,url,headers,rawText,timeoutMs,maxOut}){
   const p=String(model.provider||'').toLowerCase();
   if(!rawText||p.includes('gemini'))throw new Error('La IA no devolvió JSON válido.');
-  const repairPrompt=`Convierte la respuesta siguiente a JSON válido para una revisión académica. No agregues explicaciones ni markdown. Conserva el contenido disponible y asegúrate de incluir categories, observations, critical, similarityEstimate, similarityRisk, similarityMatches, aiEstimate, aiRisk y aiFlags. categories debe contener la rúbrica completa.\n\nRESPUESTA ORIGINAL:\n${String(rawText).slice(0,18000)}`;
+  const repairPrompt=`Convierte la respuesta siguiente a JSON válido para una revisión académica. No agregues explicaciones ni markdown. Conserva el contenido disponible y asegúrate de incluir categories, observations, critical, similarityEstimate, similarityRisk, similarityMatches, aiEstimate, aiRisk y aiFlags. No inventes categorías que no estén en la respuesta original.\n\nRESPUESTA ORIGINAL:\n${String(rawText).slice(0,18000)}`;
   const body={model:model.model,messages:[{role:'user',content:repairPrompt}],temperature:0,max_tokens:Math.min(maxOut,4500)};
   if(p.includes('cerebras')){delete body.max_tokens;body.max_completion_tokens=Math.min(maxOut,4500)}
   if(p.includes('cloudflare'))body.response_format={type:'json_object'};
@@ -123,7 +125,6 @@ async function callModel(model,prompt){
     body={model:model.model,messages:[{role:'user',content:prompt}],temperature:clamp(model.temperature??.2,0,1)};
     const maxOut=Math.min(Number(model.tokens)||6000,7000);
     if(p.includes('cerebras'))body.max_completion_tokens=maxOut;else body.max_tokens=maxOut;
-    // Workers AI admite JSON mode mediante response_format. Esto evita respuestas vacías o con markdown.
     if(p.includes('cloudflare'))body.response_format={type:'json_object'};
   }
   let lastErr;
@@ -136,11 +137,16 @@ async function callModel(model,prompt){
       if(!text)throw new Error('Respuesta vacía del modelo.');
       try{return {json:parseReviewText(text),usage:data?.usage||data?.usageMetadata||null,repaired:false}}
       catch(parseErr){
-        // Un segundo pase de la misma IA corrige respuestas útiles que llegaron con formato inválido.
         try{return await repairStructuredResponse({model,url,headers,rawText:text,timeoutMs,maxOut:Math.min(Number(model.tokens)||6000,7000)})}
         catch(repairErr){throw new Error(`${parseErr.message} Reparación fallida: ${repairErr.message}`)}
       }
-    }catch(err){lastErr=err;if(!/abort|timeout|408|429|500|502|503|504|high demand|overload|capacity|temporar|rate limit/i.test(String(err.message)))throw err}
+    }catch(err){
+      lastErr=err;
+      const msg=String(err?.message||err);
+      // Un timeout/abort ya consumió toda la ventana de espera: pasar al siguiente proveedor de inmediato.
+      if(/abort|timeout/i.test(msg))throw err;
+      if(!/408|429|500|502|503|504|high demand|overload|capacity|temporar|rate limit/i.test(msg))throw err;
+    }
   }
   throw lastErr||new Error('No fue posible obtener respuesta.');
 }
