@@ -6,13 +6,16 @@ const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number(n)||0));
 
 function buildPrompt(articleText,model){
   const rubric=RUBRIC.map(([n,m])=>`${n}: ${m}`).join('\n');
-  return `Actúa como revisor de un ARTÍCULO ACADÉMICO institucional. No es arbitraje de artículo científico. Tu función principal es ${model.reviewType||'General'}.
-Evalúa solo lo visible. No inventes fuentes, DOI, autores, páginas ni resultados.
+  return `Actúa como revisor MUY EXIGENTE de un ARTÍCULO ACADÉMICO institucional. No es arbitraje de artículo científico. Tu función principal es ${model.reviewType||'General'}.
+Evalúa solo lo visible. No inventes fuentes, DOI, autores, páginas, resultados, cálculos ni procedimientos.
 Reglas:
-- Nota académica sobre 100; aprobado desde 70.
-- Formato institucional ÉLITE = 20 puntos.
+- Nota académica sobre 100; aprobado desde 70, salvo condición académica crítica que impida la aprobación.
+- El puntaje máximo se gana: no otorgues puntaje alto si falta evidencia explícita o justificación técnica.
+- Adapta instrumentos, población/muestra y rigor al tipo real de estudio; no impongas criterios cuantitativos a estudios cualitativos o documentales.
+- Evita doble penalización del mismo error raíz.
+- Calidad académica formal vale 3 puntos. La plantilla institucional ÉLITE sigue siendo referencia formal.
 - NO penalizar ORCID ni el año/volumen provisional de la revista.
-- Referencias reales y preferentemente de los últimos 5 años, salvo clásicos indispensables. Si no puedes verificar una fuente externamente, indícalo y no la declares falsa.
+- Referencias preferentemente de los últimos 5 años, salvo clásicos indispensables. Si no puedes verificar externamente una fuente, no la declares falsa.
 - Similitud y posible uso de IA son resultados separados de la nota.
 - Detección de IA es solo estimativa y nunca prueba definitiva.
 
@@ -21,7 +24,7 @@ ${rubric}
 
 Devuelve SOLO JSON válido con:
 {
- "categories":[["Título y delimitación",4,0]],
+ "categories":[["Nombre exacto",MAXIMO,PUNTAJE]],
  "observations":[{"severity":"Crítico|Alto|Medio|Bajo","section":"...","points":0,"page":"sección o ubicación","title":"...","original":"fragmento real breve","problem":"...","why":"...","fix":"...","proposal":"..."}],
  "critical":[],
  "similarityEstimate":0,
@@ -31,7 +34,7 @@ Devuelve SOLO JSON válido con:
  "aiRisk":"Bajo|Medio|Alto",
  "aiFlags":[]
 }
-Incluye las 11 categorías exactas y no excedas sus máximos. Máximo 12 observaciones relevantes. similarityEstimate debe ser una estimación conservadora, no una acusación de plagio.
+Incluye las ${RUBRIC.length} categorías exactas y no excedas sus máximos. Máximo 12 observaciones relevantes.
 
 ARTÍCULO:\n${articleText}`;
 }
@@ -63,8 +66,6 @@ function extractJson(text){
 }
 function validateReviewShape(x){
   if(!x||typeof x!=='object')throw new Error('Respuesta académica inválida.');
-  // El motor híbrido pide solo las categorías de cada carril. Una respuesta parcial es válida
-  // siempre que incluya al menos una categoría; hybrid.js verifica y consolida las categorías pertinentes.
   if(!Array.isArray(x.categories)||x.categories.length<1)throw new Error('La IA no devolvió categorías evaluables.');
   if(!Array.isArray(x.observations))x.observations=[];
   return x;
@@ -115,14 +116,14 @@ async function callModel(model,prompt){
   if(gemini){
     url=String(url).replace(/\{modelo\}|\{model\}/gi,String(model.model||'').replace(/^models\//,''));
     headers['x-goog-api-key']=key;
-    body={contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:clamp(model.temperature??.2,0,1),maxOutputTokens:Math.min(Number(model.tokens)||6000,7000),responseMimeType:'application/json'}};
+    body={contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:clamp(model.temperature??.15,0,1),maxOutputTokens:Math.min(Number(model.tokens)||6000,7000),responseMimeType:'application/json'}};
   }else{
     if(p.includes('cloudflare'))url=String(url).replace(/\{account_id\}/gi,encodeURIComponent(cloudflareAccountId(model)));
     headers.Authorization=`Bearer ${key}`;
     if(p.includes('openrouter')){headers['HTTP-Referer']='https://jeffer91.github.io/Revisor-Articulos/';headers['X-Title']='Revisión Académica ITSQMET'}
     if(p.includes('nvidia'))headers.Accept='application/json';
     if(p.includes('public ai'))headers['User-Agent']='Revisor-Articulos-ITSQMET/1.0';
-    body={model:model.model,messages:[{role:'user',content:prompt}],temperature:clamp(model.temperature??.2,0,1)};
+    body={model:model.model,messages:[{role:'user',content:prompt}],temperature:clamp(model.temperature??.15,0,1)};
     const maxOut=Math.min(Number(model.tokens)||6000,7000);
     if(p.includes('cerebras'))body.max_completion_tokens=maxOut;else body.max_tokens=maxOut;
     if(p.includes('cloudflare'))body.response_format={type:'json_object'};
@@ -143,7 +144,6 @@ async function callModel(model,prompt){
     }catch(err){
       lastErr=err;
       const msg=String(err?.message||err);
-      // Un timeout/abort ya consumió toda la ventana de espera: pasar al siguiente proveedor de inmediato.
       if(/abort|timeout/i.test(msg))throw err;
       if(!/408|429|500|502|503|504|high demand|overload|capacity|temporar|rate limit/i.test(msg))throw err;
     }
@@ -153,7 +153,8 @@ async function callModel(model,prompt){
 
 async function testModel(model){
   const started=Date.now();
-  const prompt='Devuelve SOLO JSON válido con estas claves: {"categories":[["Título y delimitación",4,3],["Resumen, Abstract y palabras clave",6,4],["Introducción, antecedentes y problema",10,7],["Objetivos y coherencia",6,4],["Metodología",16,10],["Resultados",12,8],["Discusión",8,5],["Conclusiones y recomendaciones",6,4],["Referencias",7,5],["Redacción y coherencia global",5,4],["Formato institucional ÉLITE",20,15]],"observations":[],"critical":[],"similarityEstimate":0,"similarityRisk":"Bajo","similarityMatches":[],"aiEstimate":0,"aiRisk":"Bajo","aiFlags":[]}';
+  const sampleCategories=RUBRIC.map(([name,max])=>[name,max,Math.round(max*.7*10)/10]);
+  const prompt=`Devuelve SOLO JSON válido con exactamente esta estructura y categorías: ${JSON.stringify({categories:sampleCategories,observations:[],critical:[],similarityEstimate:0,similarityRisk:'Bajo',similarityMatches:[],aiEstimate:0,aiRisk:'Bajo',aiFlags:[]})}`;
   const out=await callModel(model,prompt),tokens=out.usage?.total_tokens??out.usage?.totalTokenCount??'—';
   return {time:((Date.now()-started)/1000).toFixed(1),tokens,text:out.repaired?'Respuesta estructurada recibida y reparada correctamente.':'Respuesta estructurada recibida correctamente.'};
 }
