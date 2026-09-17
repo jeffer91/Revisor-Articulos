@@ -37,7 +37,6 @@ async function attemptProvider(job,model,clean,successes,failures,lane,automatic
   const started=Date.now();await setProvider(job,model,'Procesando',`Carril: ${lane.label}`,null,lane);
   try{
     const article=hybrid.articleForLane(clean,model,lane),prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic);
-    // En revisión real no permitimos que un proveedor bloquee el carril durante varios minutos.
     const runtimeModel={...model,timeout:Math.min(Number(model.timeout)||90,70)};
     const result=await ai.callModel(runtimeModel,prompt);
     validateLaneCategories(result,lane);
@@ -57,7 +56,7 @@ async function runReview(job,articleText){
   try{
     const clean=String(articleText||'').replace(/\u0000/g,' ').trim();if(clean.length<700)throw new Error('No se pudo extraer suficiente texto del artículo.');
     const automatic=hybrid.analyzeAutomatic(clean);job.step=2;
-    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · estructura ${automatic.formalStructureScore}/20`,updatedAt:new Date().toISOString()}};
+    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/3`,updatedAt:new Date().toISOString()}};
     job.failures=[];await store.persistJob(job);
 
     const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa').sort((a,b)=>(Number(a.priority)||999)-(Number(b.priority)||999));
@@ -85,14 +84,14 @@ async function runReview(job,articleText){
     if(unresolved.length||successes.length<3){job.status='incomplete';job.step=6;job.message=`Solo respondieron ${successes.length} proveedores de forma válida. Se requieren 3 carriles académicos completos. Tu intento no fue descontado.`;await store.persistJob(job);return}
 
     job.step=6;await store.persistJob(job);job.step=7;await store.persistJob(job);
-    job.result=hybrid.consolidateHybrid(successes,job.file,job.cedula,automatic);job.result.id=job.id;job.status='complete';job.step=8;job.consumesAttempt=true;job.message='Revisión híbrida completada correctamente.';await store.persistJob(job);
+    job.result=hybrid.consolidateHybrid(successes,job.file,job.cedula,automatic);job.result.id=job.id;job.status='complete';job.step=8;job.consumesAttempt=true;job.message='Revisión híbrida estricta completada correctamente.';await store.persistJob(job);
   }catch(err){job.status='failed';job.step=6;job.message=String(err.message||err);job.consumesAttempt=false;try{await store.persistJob(job)}catch(dbErr){console.error('No se pudo persistir el fallo:',dbErr)}}
 }
 
 const server=http.createServer(async(req,res)=>{
   const origin=cors(req,res);if(req.method==='OPTIONS'){res.writeHead(204);return res.end()}const url=new URL(req.url,'http://localhost');
   try{
-    if(req.method==='GET'&&url.pathname==='/health'){const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),ready=active.filter(m=>!store.configurationProblem(m));return json(res,200,{ok:true,service:'Revisor Artículos API',engine:'hybrid-v1',database:true,models:models.length,active:active.length,ready:ready.length,providers:[...new Set(models.map(m=>m.provider))],time:new Date().toISOString()},origin)}
+    if(req.method==='GET'&&url.pathname==='/health'){const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),ready=active.filter(m=>!store.configurationProblem(m));return json(res,200,{ok:true,service:'Revisor Artículos API',engine:'hybrid-v2-strict',database:true,models:models.length,active:active.length,ready:ready.length,providers:[...new Set(models.map(m=>m.provider))],time:new Date().toISOString()},origin)}
 
     if(req.method==='POST'&&url.pathname==='/admin/login'){
       const body=await readJson(req),ip=req.socket.remoteAddress||'unknown',now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
@@ -140,4 +139,4 @@ const server=http.createServer(async(req,res)=>{
   }catch(err){console.error(err);return json(res,err.status||500,{message:String(err.message||err)},origin)}
 });
 
-store.initDb().then(()=>server.listen(PORT,'0.0.0.0',()=>console.log(`Revisor Artículos API activa en ${PORT} con motor híbrido y persistencia PostgreSQL`))).catch(err=>{console.error('No se pudo iniciar el backend:',err);process.exit(1)});
+store.initDb().then(()=>server.listen(PORT,'0.0.0.0',()=>console.log(`Revisor Artículos API activa en ${PORT} con motor híbrido estricto y persistencia PostgreSQL`))).catch(err=>{console.error('No se pudo iniciar el backend:',err);process.exit(1)});
