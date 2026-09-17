@@ -3,6 +3,12 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+  const expireAdminSession = (message = 'Tu sesión administrativa expiró. Ingresa nuevamente.') => {
+    sessionStorage.removeItem('revisor_token');
+    sessionStorage.removeItem('revisor_admin_auth');
+    sessionStorage.setItem('revisor_relogin_notice', message);
+  };
+
   const api = async (path, options = {}) => {
     if (!config.API_BASE_URL) throw new Error('BACKEND_NOT_CONFIGURED');
     const token = sessionStorage.getItem('revisor_token');
@@ -11,6 +17,13 @@
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(`${config.API_BASE_URL}${path}`, {...options, headers});
     const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401 && path.startsWith('/admin/')) {
+      expireAdminSession(data.message || 'Tu sesión administrativa expiró. Ingresa nuevamente.');
+      setTimeout(() => location.reload(), 50);
+      throw new Error('Sesión administrativa expirada. Vuelve a ingresar.');
+    }
+
     if (!response.ok) throw new Error(data.message || `HTTP_${response.status}`);
     return data;
   };
@@ -103,5 +116,5 @@
     }
   });
 
-  window.Revisor = { $, $$, api, firebaseGetStudent, parseFirestoreDocument, toast, modal, formatDate, riskClass, config };
+  window.Revisor = { $, $$, api, firebaseGetStudent, parseFirestoreDocument, toast, modal, formatDate, riskClass, config, expireAdminSession };
 })();
