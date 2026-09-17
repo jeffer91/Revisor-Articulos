@@ -44,7 +44,13 @@ function articleForModel(text,model){
 }
 
 function repairJsonString(raw){
-  return String(raw||'').replace(/^```(?:json)?\s*/i,'').replace(/```$/,'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/,\s*([}\]])/g,'$1').trim();
+  return String(raw||'')
+    .replace(/^```(?:json)?\s*/i,'')
+    .replace(/```$/,'')
+    .replace(/[“”]/g,'"')
+    .replace(/[‘’]/g,"'")
+    .replace(/,\s*([}\]])/g,'$1')
+    .trim();
 }
 function extractJson(text){
   const raw=String(text||'').trim();
@@ -61,6 +67,8 @@ function validateReviewShape(x){
   if(!Array.isArray(x.observations))x.observations=[];
   return x;
 }
+const parseReviewText=text=>validateReviewShape(extractJson(text));
+
 async function fetchWithTimeout(url,options,timeoutMs){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{return await fetch(url,{...options,signal:controller.signal})}finally{clearTimeout(timer)}
@@ -71,6 +79,30 @@ function classifyFailure(message){
   if(/sin api key|falta el account id|falta el endpoint|falta el identificador/i.test(s))return 'Sin configurar';
   if(/408|429|500|502|503|504|high demand|temporar|overload|capacity|timeout|abort|rate limit/i.test(s))return 'Saturada';
   return 'Error';
+}
+
+function extractResponseText(data,gemini){
+  if(gemini)return data?.candidates?.[0]?.content?.parts?.map(x=>x?.text||'').join('')||'';
+  return data?.choices?.[0]?.message?.content
+    ||data?.result?.choices?.[0]?.message?.content
+    ||data?.result?.response
+    ||data?.response
+    ||'';
+}
+
+async function repairStructuredResponse({model,url,headers,rawText,timeoutMs,maxOut}){
+  const p=String(model.provider||'').toLowerCase();
+  if(!rawText||p.includes('gemini'))throw new Error('La IA no devolvió JSON válido.');
+  const repairPrompt=`Convierte la respuesta siguiente a JSON válido para una revisión académica. No agregues explicaciones ni markdown. Conserva el contenido disponible y asegúrate de incluir categories, observations, critical, similarityEstimate, similarityRisk, similarityMatches, aiEstimate, aiRisk y aiFlags. categories debe contener la rúbrica completa.\n\nRESPUESTA ORIGINAL:\n${String(rawText).slice(0,18000)}`;
+  const body={model:model.model,messages:[{role:'user',content:repairPrompt}],temperature:0,max_tokens:Math.min(maxOut,4500)};
+  if(p.includes('cerebras')){delete body.max_tokens;body.max_completion_tokens=Math.min(maxOut,4500)}
+  if(p.includes('cloudflare'))body.response_format={type:'json_object'};
+  const resp=await fetchWithTimeout(url,{method:'POST',headers,body:JSON.stringify(body)},timeoutMs);
+  const data=await resp.json().catch(()=>({}));
+  if(!resp.ok)throw new Error(providerError(data,resp.status));
+  const text=extractResponseText(data,false);
+  if(!text)throw new Error('Respuesta vacía durante la reparación estructurada.');
+  return {json:parseReviewText(text),usage:data?.usage||null,repaired:true};
 }
 
 async function callModel(model,prompt){
@@ -91,16 +123,23 @@ async function callModel(model,prompt){
     body={model:model.model,messages:[{role:'user',content:prompt}],temperature:clamp(model.temperature??.2,0,1)};
     const maxOut=Math.min(Number(model.tokens)||6000,7000);
     if(p.includes('cerebras'))body.max_completion_tokens=maxOut;else body.max_tokens=maxOut;
+    // Workers AI admite JSON mode mediante response_format. Esto evita respuestas vacías o con markdown.
+    if(p.includes('cloudflare'))body.response_format={type:'json_object'};
   }
   let lastErr;
-  for(const delay of [0,1200,2800]){
+  for(const delay of [0,1800,5000]){
     if(delay)await sleep(delay);
     try{
       const resp=await fetchWithTimeout(url,{method:'POST',headers,body:JSON.stringify(body)},timeoutMs),data=await resp.json().catch(()=>({}));
       if(!resp.ok){const msg=providerError(data,resp.status);if([408,429,500,502,503,504].includes(resp.status)){lastErr=new Error(msg);continue}throw new Error(msg)}
-      const text=gemini?data?.candidates?.[0]?.content?.parts?.map(x=>x?.text||'').join(''):data?.choices?.[0]?.message?.content;
+      const text=extractResponseText(data,gemini);
       if(!text)throw new Error('Respuesta vacía del modelo.');
-      return {json:validateReviewShape(extractJson(text)),usage:data?.usage||data?.usageMetadata||null};
+      try{return {json:parseReviewText(text),usage:data?.usage||data?.usageMetadata||null,repaired:false}}
+      catch(parseErr){
+        // Un segundo pase de la misma IA corrige respuestas útiles que llegaron con formato inválido.
+        try{return await repairStructuredResponse({model,url,headers,rawText:text,timeoutMs,maxOut:Math.min(Number(model.tokens)||6000,7000)})}
+        catch(repairErr){throw new Error(`${parseErr.message} Reparación fallida: ${repairErr.message}`)}
+      }
     }catch(err){lastErr=err;if(!/abort|timeout|408|429|500|502|503|504|high demand|overload|capacity|temporar|rate limit/i.test(String(err.message)))throw err}
   }
   throw lastErr||new Error('No fue posible obtener respuesta.');
@@ -110,7 +149,7 @@ async function testModel(model){
   const started=Date.now();
   const prompt='Devuelve SOLO JSON válido con estas claves: {"categories":[["Título y delimitación",4,3],["Resumen, Abstract y palabras clave",6,4],["Introducción, antecedentes y problema",10,7],["Objetivos y coherencia",6,4],["Metodología",16,10],["Resultados",12,8],["Discusión",8,5],["Conclusiones y recomendaciones",6,4],["Referencias",7,5],["Redacción y coherencia global",5,4],["Formato institucional ÉLITE",20,15]],"observations":[],"critical":[],"similarityEstimate":0,"similarityRisk":"Bajo","similarityMatches":[],"aiEstimate":0,"aiRisk":"Bajo","aiFlags":[]}';
   const out=await callModel(model,prompt),tokens=out.usage?.total_tokens??out.usage?.totalTokenCount??'—';
-  return {time:((Date.now()-started)/1000).toFixed(1),tokens,text:'Respuesta estructurada recibida correctamente.'};
+  return {time:((Date.now()-started)/1000).toFixed(1),tokens,text:out.repaired?'Respuesta estructurada recibida y reparada correctamente.':'Respuesta estructurada recibida correctamente.'};
 }
 
 function normalizeReview(x){
