@@ -4,6 +4,19 @@
   if (!form || !config.API_BASE_URL) return;
 
   const apiBase = String(config.API_BASE_URL).replace(/\/$/,'');
+  const loginMsg = document.getElementById('admin-login-msg');
+  const reloginNotice = sessionStorage.getItem('revisor_relogin_notice');
+  if (reloginNotice && loginMsg) {
+    loginMsg.textContent = reloginNotice;
+    sessionStorage.removeItem('revisor_relogin_notice');
+  }
+
+  const forceReauth = (message = 'Tu sesión administrativa expiró. Ingresa nuevamente.') => {
+    sessionStorage.removeItem('revisor_token');
+    sessionStorage.removeItem('revisor_admin_auth');
+    sessionStorage.setItem('revisor_relogin_notice', message);
+    location.reload();
+  };
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -22,6 +35,7 @@
       if (!response.ok || !data.token) throw new Error(data.message || `HTTP ${response.status}`);
       sessionStorage.setItem('revisor_token',data.token);
       sessionStorage.setItem('revisor_admin_auth','1');
+      sessionStorage.removeItem('revisor_relogin_notice');
       if (msg) msg.textContent = '';
       location.reload();
     } catch (err) {
@@ -32,13 +46,14 @@
   document.getElementById('logout')?.addEventListener('click',()=>{
     sessionStorage.removeItem('revisor_token');
     sessionStorage.removeItem('revisor_admin_auth');
+    sessionStorage.removeItem('revisor_relogin_notice');
   },true);
 
   async function syncModels() {
     if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
     const token = sessionStorage.getItem('revisor_token');
     if (!token) {
-      sessionStorage.removeItem('revisor_admin_auth');
+      forceReauth('Necesitas volver a ingresar para continuar administrando las IA.');
       return;
     }
     try {
@@ -56,8 +71,7 @@
         body:JSON.stringify({models:sanitized})
       });
       if (response.status === 401) {
-        sessionStorage.removeItem('revisor_token');
-        sessionStorage.removeItem('revisor_admin_auth');
+        forceReauth('La sesión anterior pertenecía al backend anterior. Ingresa nuevamente para crear una sesión válida.');
         return;
       }
       const serverModels = await response.json().catch(()=>null);
@@ -69,16 +83,15 @@
         localStorage.setItem('revisor_models',JSON.stringify(merged));
       }
 
-      // Sube al backend las claves que ya estaban guardadas en esta sesión del navegador.
-      // El servidor no las devuelve y no se escriben en GitHub.
       await Promise.all(local.map(async m => {
         const key = sessionStorage.getItem(`revisor_key_${m.id}`);
         if (!key) return;
-        await fetch(`${apiBase}/admin/models/${encodeURIComponent(m.id)}`, {
+        const keyResponse = await fetch(`${apiBase}/admin/models/${encodeURIComponent(m.id)}`, {
           method:'PUT',
           headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
           body:JSON.stringify({apiKey:key})
         }).catch(()=>null);
+        if (keyResponse?.status === 401) forceReauth('Tu sesión administrativa expiró. Ingresa nuevamente.');
       }));
     } catch (err) {
       console.warn('No se pudo sincronizar el catálogo con el backend:',err);
