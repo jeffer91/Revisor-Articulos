@@ -51,10 +51,11 @@
   $('#dropzone').addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag')});
   $('#dropzone').addEventListener('dragleave',e=>e.currentTarget.classList.remove('drag'));
   $('#dropzone').addEventListener('drop',e=>{e.preventDefault();e.currentTarget.classList.remove('drag');setFile(e.dataTransfer.files[0])});
-  $('#start-review').addEventListener('click',()=>{if(!file)return;if(student.available<=0){toast('No tienes revisiones disponibles.','danger');return}$('#attempts-confirm').innerHTML=`<strong>Revisiones disponibles: ${student.available}</strong><div class="small">Si no se alcanzan 3 proveedores exitosos, el intento no se descuenta.</div>`;modal('confirm-review-modal')});
+  $('#start-review').addEventListener('click',()=>{if(!file)return;if(student.available<=0){toast('No tienes revisiones disponibles.','danger');return}$('#attempts-confirm').innerHTML=`<strong>Revisiones disponibles: ${student.available}</strong><div class="small">El intento solo se descuenta cuando se completan los 3 carriles académicos.</div>`;modal('confirm-review-modal')});
 
   const labels=['Archivo recibido','Estructura y formato institucional','Evaluación académica','Verificación de referencias','Análisis de similitud','Posible uso de IA','Consolidación de observaciones','Generación de informe'];
   const progress=i=>{$('#process-progress').style.width=`${Math.round(i/labels.length*100)}%`;$('#process-steps').innerHTML=labels.map((l,x)=>`<div class="step ${x<i?'done':x===i?'active':''}"><div class="step-icon">${x<i?'✓':x+1}</div><div class="step-text"><strong>${l}</strong><span>${x<i?'Completado':x===i?'Procesando…':'Pendiente'}</span></div></div>`).join('')};
+  const progressFailed=i=>{i=Math.max(0,Math.min(labels.length-1,Number(i)||0));$('#process-progress').style.width=`${Math.round(i/labels.length*100)}%`;$('#process-steps').innerHTML=labels.map((l,x)=>`<div class="step ${x<i?'done':x===i?'active':''}"><div class="step-icon">${x<i?'✓':x===i?'✕':x+1}</div><div class="step-text"><strong>${l}</strong><span>${x<i?'Completado':x===i?'No completado':'Pendiente'}</span></div></div>`).join('')};
   const showResult=r=>{result=r;tab='academico';V.resultCards(r);$$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.resultTab==='academico'));V.panel(r,'academico',D.rubric);nav('resultado')};
 
   function processOutcome(message,type='danger'){
@@ -75,18 +76,21 @@
 
   async function runReal(){
     modal('confirm-review-modal',false);if(!config.API_BASE_URL){toast('El servicio de revisión con IA no está conectado.','danger');return}
-    nav('proceso');clearOutcome();progress(0);
+    nav('proceso');clearOutcome();let currentStep=0;progress(currentStep);
     try{
       const articleText=await extractArticleText(file);if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
-      progress(1);const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:student.cedula,fileName:file.name,articleText})});
-      let status,i=2;
-      do{await new Promise(r=>setTimeout(r,1800));status=await api(`/reviews/${start.id}/status`);i=Math.min(labels.length-1,Math.max(i,status.step||i));progress(i)}while(!['complete','incomplete','failed'].includes(status.status));
+      currentStep=1;progress(currentStep);const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:student.cedula,fileName:file.name,articleText})});
+      let status,i=2;const deadline=Date.now()+10*60*1000;
+      do{
+        if(Date.now()>deadline)throw new Error('La revisión superó el tiempo máximo de espera.');
+        await new Promise(r=>setTimeout(r,1800));status=await api(`/reviews/${start.id}/status`);i=Math.min(labels.length-1,Math.max(i,status.step||i));currentStep=i;progress(i)
+      }while(!['complete','incomplete','failed'].includes(status.status));
       if(status.status==='complete'){
-        progress(labels.length);const r=await api(`/reviews/${start.id}`);await applyRemoteState(student);refresh();showResult(r);toast(`Revisión completada con ${r.reviewers} proveedores exitosos.`,'success');
+        progress(labels.length);const r=await api(`/reviews/${start.id}`);await applyRemoteState(student);refresh();showResult(r);toast(`Revisión completada con ${r.reviewers} carriles académicos.`,'success');
       }else{
-        progress(labels.length);await applyRemoteState(student);refresh();processOutcome(status.message||'El sistema no alcanzó el mínimo de revisores. Tu intento no fue descontado.','danger');
+        progressFailed(status.step??currentStep);await applyRemoteState(student);refresh();processOutcome(status.message||'El sistema no alcanzó los 3 carriles académicos. Tu intento no fue descontado.','danger');
       }
-    }catch(err){console.error(err);progress(labels.length);await applyRemoteState(student);refresh();processOutcome(`${err.message||'Ocurrió un error técnico.'} Tu intento no fue descontado.`,'danger')}
+    }catch(err){console.error(err);progressFailed(currentStep);await applyRemoteState(student);refresh();processOutcome(`${err.message||'Ocurrió un error técnico.'} Tu intento no fue descontado.`,'danger')}
   }
   $('#confirm-start').addEventListener('click',runReal);
 
