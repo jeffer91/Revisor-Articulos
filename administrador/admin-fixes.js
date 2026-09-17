@@ -21,13 +21,55 @@
   window.addEventListener('revisor-models-updated',e=>render(e.detail||[]));
   setTimeout(()=>{installHealthView();try{const m=JSON.parse(localStorage.getItem('revisor_models')||'[]');if(m.length)render(m)}catch{}},0);
 
+  const readModels=()=>{try{return JSON.parse(localStorage.getItem('revisor_models')||'[]')}catch{return[]}};
+  const readStudents=()=>{try{return JSON.parse(localStorage.getItem('revisor_known_students')||'[]')}catch{return[]}};
+  const saveRemoteStudentState=(cedula,state)=>localStorage.setItem(`revisor_student_state_${cedula}`,JSON.stringify({used:Number(state.used)||0,available:Number(state.available)||0,reviews:Array.isArray(state.reviews)?state.reviews:[]}));
+  const findStudent=id=>readStudents().find(s=>s.id===id||s.cedula===id);
+
+  async function showStudentManager(id){
+    const s=findStudent(id);if(!s)return;
+    let state={used:s.used||0,available:s.available??3,reviews:[]};
+    try{state=await window.Revisor.api(`/students/${s.cedula}/state`);saveRemoteStudentState(s.cedula,state)}catch(err){console.warn(err)}
+    const body=document.getElementById('student-modal-body');if(!body)return;
+    body.innerHTML=`<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${esc(state.used)}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${esc(state.available)}</div></div></div><h3 style="margin-top:20px">${esc(s.name)}</h3><p class="muted">${esc(s.cedula)} · ${esc(s.career||'')}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${esc(id)}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${esc(id)}">Restaurar intento</button></div><div class="small muted">Los cambios se guardan centralmente y no eliminan el historial.</div>`;
+    window.Revisor.modal('student-modal');
+  }
+
+  document.addEventListener('click',async event=>{
+    const toggle=event.target.closest('[data-toggle-model]');
+    if(toggle){
+      event.preventDefault();event.stopImmediatePropagation();
+      const models=readModels(),m=models.find(x=>x.id===toggle.dataset.toggleModel);if(!m)return;
+      const next=m.state==='Activa'?'Inactiva':'Activa';
+      try{await window.Revisor.api(`/admin/models/${encodeURIComponent(m.id)}`,{method:'PUT',body:JSON.stringify({state:next})});m.state=next;localStorage.setItem('revisor_models',JSON.stringify(models));render(models);window.Revisor.toast(`IA ${next.toLowerCase()}.`,'success')}catch(err){window.Revisor.toast(err.message,'danger')}
+      return;
+    }
+
+    const manage=event.target.closest('[data-manage-student]');
+    if(manage){event.preventDefault();event.stopImmediatePropagation();await showStudentManager(manage.dataset.manageStudent);return}
+
+    const add=event.target.closest('[data-add-attempt]');
+    if(add){
+      event.preventDefault();event.stopImmediatePropagation();const s=findStudent(add.dataset.addAttempt);if(!s)return;
+      try{const state=await window.Revisor.api(`/admin/students/${s.cedula}/grant`,{method:'POST',body:JSON.stringify({count:1})});saveRemoteStudentState(s.cedula,state);window.Revisor.toast('Revisión adicional asignada.','success');await showStudentManager(s.id)}catch(err){window.Revisor.toast(err.message,'danger')}
+      return;
+    }
+
+    const restore=event.target.closest('[data-restore-attempt]');
+    if(restore){
+      event.preventDefault();event.stopImmediatePropagation();const s=findStudent(restore.dataset.restoreAttempt);if(!s)return;
+      try{const state=await window.Revisor.api(`/admin/students/${s.cedula}/grant`,{method:'POST',body:JSON.stringify({count:1})});saveRemoteStudentState(s.cedula,state);window.Revisor.toast('Intento restaurado.','success');await showStudentManager(s.id)}catch(err){window.Revisor.toast(err.message,'danger')}
+      return;
+    }
+  },true);
+
   let testingId=null;
   document.addEventListener('click',event=>{const btn=event.target.closest('[data-test-model]');if(btn)testingId=btn.dataset.testModel||null},true);
   const result=document.getElementById('test-result');if(!result)return;
   const observer=new MutationObserver(()=>{
     const text=(result.textContent||'').toLowerCase();if(!/high demand|saturad|temporar|rate limit|429|503|overloaded|capacity/.test(text))return;
     const alert=result.querySelector('.alert-danger');if(alert){alert.classList.remove('alert-danger');alert.classList.add('alert-warning');const strong=alert.querySelector('strong');if(strong)strong.textContent='Saturación temporal'}
-    if(testingId){try{const models=JSON.parse(localStorage.getItem('revisor_models')||'[]'),m=models.find(x=>x.id===testingId);if(m){m.lastTest='Saturada';localStorage.setItem('revisor_models',JSON.stringify(models));render(models)}}catch{}}
+    if(testingId){try{const models=readModels(),m=models.find(x=>x.id===testingId);if(m){m.lastTest='Saturada';localStorage.setItem('revisor_models',JSON.stringify(models));render(models)}}catch{}}
   });
   observer.observe(result,{childList:true,subtree:true,characterData:true});
 })();
