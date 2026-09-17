@@ -44,7 +44,10 @@ function firstIndex(text,re){
 }
 
 function extractReferenceBlock(text){
-  const idx=Math.max(firstIndex(text,/\breferencias(?:\s+bibliogr[aá]ficas)?\b/i),firstIndex(text,/\bbibliograf[ií]a\b/i));
+  const refs=firstIndex(text,/\breferencias(?:\s+bibliogr[aá]ficas)?\b/i);
+  const bib=firstIndex(text,/\bbibliograf[ií]a\b/i);
+  const candidates=[refs,bib].filter(i=>i>=0);
+  const idx=candidates.length?Math.min(...candidates):-1;
   return idx>=0?String(text).slice(idx):'';
 }
 
@@ -68,8 +71,8 @@ function analyzeAutomatic(text){
   const recentRatio=refYears.length?Math.round(recentYears.length/refYears.length*100):null;
   const doiCount=(refs.match(/\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+/gi)||[]).length;
   const urlCount=(refs.match(/https?:\/\/\S+/gi)||[]).length;
-  const inTextYears=[...source.slice(0,refs?source.indexOf(refs):source.length).matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m=>m[1]);
-  const citationYearCount=inTextYears.length;
+  const refStart=refs?source.indexOf(refs):source.length;
+  const citationYearCount=[...source.slice(0,refStart).matchAll(/\b(19\d{2}|20\d{2})\b/g)].length;
 
   let formalScore=0;
   if(presence.resumen) formalScore+=2;
@@ -129,7 +132,10 @@ function collectWindows(text,terms,limit){
     if(idx>=0)add(idx-3500,idx+9000,term);
     if(windows.join('').length>=limit)break;
   }
-  if(/referenc|bibliograf/i.test(terms.join(' '))){const r=extractReferenceBlock(source);if(r)add(Math.max(0,source.length-r.length),source.length,'referencias')}
+  if(/referenc|bibliograf/i.test(terms.join(' '))){
+    const r=extractReferenceBlock(source);
+    if(r)add(Math.max(0,source.length-r.length),source.length,'referencias');
+  }
   let out=windows.join('\n');
   if(out.length>limit)out=out.slice(0,limit);
   return out||source.slice(0,limit);
@@ -144,7 +150,8 @@ function articleForLane(text,model,lane){
 function buildSpecializedPrompt(articleText,model,lane,auto){
   const maxima=new Map(RUBRIC);
   const allowed=lane.categories.map(n=>`${n}: ${maxima.get(n)}`).join('\n');
-  return `Actúa como revisor especializado de un ARTÍCULO ACADÉMICO institucional. No es arbitraje de artículo científico.\nTu carril de revisión es: ${lane.label}.\nEl proveedor/modelo tiene como función configurada: ${model.reviewType||'General'}.\n\nEvalúa únicamente estas categorías:\n${allowed}\n\nReglas obligatorias:\n- No puntúes categorías fuera de la lista anterior.\n- Evalúa solo lo visible. No inventes fuentes, DOI, autores, páginas ni resultados.\n- La nota global final será consolidada por otro componente; tú solo produces puntuaciones parciales.\n- Si detectas un error metodológico grave, inclúyelo en critical y en observations con severidad Crítico.\n- Referencias: preferentemente últimos 5 años, salvo clásicos indispensables. Si no puedes verificar externamente una fuente, no la declares inexistente.\n- NO penalizar ORCID ni el año/volumen provisional de la revista.\n- Similitud y posible uso de IA son indicadores orientativos separados de la nota.\n- Máximo 8 observaciones de alta utilidad dentro de tu carril.\n\n${automaticSummary(auto)}\n\nDevuelve SOLO JSON válido con esta forma:\n{\n "categories":[["Nombre exacto de una categoría permitida",MAXIMO,PUNTAJE]],\n "observations":[{"severity":"Crítico|Alto|Medio|Bajo","section":"...","points":0,"page":"sección o ubicación","title":"...","original":"fragmento real breve","problem":"...","why":"...","fix":"...","proposal":"..."}],\n "critical":[],\n "similarityEstimate":0,\n "similarityRisk":"Bajo|Medio|Alto|Crítico",\n "similarityMatches":[],\n "aiEstimate":0,\n "aiRisk":"Bajo|Medio|Alto",\n "aiFlags":[]\n}\nIncluye TODAS las categorías permitidas de tu carril, con sus nombres exactos, y ninguna otra.\n\nEXTRACTO DEL ARTÍCULO PRIORIZADO PARA ESTE CARRIL:\n${articleText}`;
+  const fullRubric=RUBRIC.map(([n,m])=>`${n}: ${m}`).join('\n');
+  return `Actúa como revisor especializado de un ARTÍCULO ACADÉMICO institucional. No es arbitraje de artículo científico.\nTu carril de revisión es: ${lane.label}.\nEl proveedor/modelo tiene como función configurada: ${model.reviewType||'General'}.\n\nCATEGORÍAS QUE SÍ DEBES EVALUAR:\n${allowed}\n\nRÚBRICA COMPLETA (solo para mantener el formato JSON esperado):\n${fullRubric}\n\nReglas obligatorias:\n- Evalúa académicamente únicamente las categorías asignadas a tu carril.\n- En categories devuelve las 11 categorías exactas; para las categorías fuera de tu carril coloca puntaje 0. Esos ceros serán ignorados por el consolidador.\n- No generes observaciones sobre categorías fuera de tu carril.\n- Evalúa solo lo visible. No inventes fuentes, DOI, autores, páginas ni resultados.\n- La nota global final será consolidada por otro componente; tú solo produces puntuaciones parciales.\n- Si detectas un error metodológico grave, inclúyelo en critical y en observations con severidad Crítico.\n- Referencias: preferentemente últimos 5 años, salvo clásicos indispensables. Si no puedes verificar externamente una fuente, no la declares inexistente.\n- NO penalizar ORCID ni el año/volumen provisional de la revista.\n- Similitud y posible uso de IA son indicadores orientativos separados de la nota.\n- Máximo 8 observaciones de alta utilidad dentro de tu carril.\n\n${automaticSummary(auto)}\n\nDevuelve SOLO JSON válido con esta forma:\n{\n "categories":[["Nombre exacto",MAXIMO,PUNTAJE]],\n "observations":[{"severity":"Crítico|Alto|Medio|Bajo","section":"...","points":0,"page":"sección o ubicación","title":"...","original":"fragmento real breve","problem":"...","why":"...","fix":"...","proposal":"..."}],\n "critical":[],\n "similarityEstimate":0,\n "similarityRisk":"Bajo|Medio|Alto|Crítico",\n "similarityMatches":[],\n "aiEstimate":0,\n "aiRisk":"Bajo|Medio|Alto",\n "aiFlags":[]\n}\n\nEXTRACTO DEL ARTÍCULO PRIORIZADO PARA ESTE CARRIL:\n${articleText}`;
 }
 
 function normalizePartial(x){
@@ -172,7 +179,9 @@ const risk=n=>n>=50?'Alto':n>=25?'Medio':'Bajo';
 function consolidateHybrid(successes,fileName,cedula,automatic){
   const normalized=successes.map(s=>({...s,review:normalizePartial(s.result.json)}));
   const categories=RUBRIC.map(([name,max])=>{
-    const scores=normalized.map(x=>x.review.categoryMap.get(name)).filter(Number.isFinite);
+    const scores=normalized
+      .filter(x=>Array.isArray(x.lane?.categories)&&x.lane.categories.includes(name))
+      .map(x=>x.review.categoryMap.get(name)).filter(Number.isFinite);
     let score=scores.length?median(scores):0;
     if(name==='Formato institucional ÉLITE'){
       const autoScore=clamp(automatic?.formalStructureScore||0,0,20);
@@ -191,8 +200,11 @@ function consolidateHybrid(successes,fileName,cedula,automatic){
   const addObservation=(o,reviewerLabel)=>{
     const key=`${o.section}|${o.title}`.toLowerCase().replace(/\s+/g,' ');
     const old=grouped.get(key);
-    if(old){old.consensus++;if(reviewerLabel&&!old.reviewers.includes(reviewerLabel))old.reviewers.push(reviewerLabel);if((o.points||0)>(old.points||0))old.points=o.points}
-    else grouped.set(key,{...o,consensus:1,reviewers:reviewerLabel?[reviewerLabel]:[]});
+    if(old){
+      old.consensus++;
+      if(reviewerLabel&&!old.reviewers.includes(reviewerLabel))old.reviewers.push(reviewerLabel);
+      if((o.points||0)>(old.points||0))old.points=o.points;
+    }else grouped.set(key,{...o,consensus:1,reviewers:reviewerLabel?[reviewerLabel]:[]});
   };
   normalized.forEach(x=>x.review.observations.forEach(o=>addObservation(o,x.lane?.label||'Revisor')));
   (automatic?.observations||[]).forEach(o=>addObservation(o,'Validación automática'));
