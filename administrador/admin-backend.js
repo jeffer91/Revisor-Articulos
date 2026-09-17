@@ -2,9 +2,9 @@
   const config = window.REVISOR_CONFIG || {};
   const form = document.getElementById('admin-login');
   if (!form || !config.API_BASE_URL) return;
-
   const apiBase = String(config.API_BASE_URL).replace(/\/$/,'');
   const loginMsg = document.getElementById('admin-login-msg');
+
   const reloginNotice = sessionStorage.getItem('revisor_relogin_notice');
   if (reloginNotice && loginMsg) {
     loginMsg.textContent = reloginNotice;
@@ -18,6 +18,22 @@
     location.reload();
   };
 
+  // API administrativa: si el backend devuelve 401, obliga a crear una sesión nueva.
+  window.Revisor.api = async (path, options = {}) => {
+    const token = sessionStorage.getItem('revisor_token');
+    const headers = new Headers(options.headers || {});
+    if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(`${apiBase}${path}`, {...options, headers});
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && path.startsWith('/admin/')) {
+      forceReauth('Tu sesión administrativa ya no es válida. Ingresa nuevamente.');
+      throw new Error('Sesión administrativa no válida.');
+    }
+    if (!response.ok) throw new Error(data.message || `HTTP_${response.status}`);
+    return data;
+  };
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -27,9 +43,7 @@
     if (msg) msg.textContent = 'Validando credenciales…';
     try {
       const response = await fetch(`${apiBase}/admin/login`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({usuario,pin})
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario,pin})
       });
       const data = await response.json().catch(()=>({}));
       if (!response.ok || !data.token) throw new Error(data.message || `HTTP ${response.status}`);
@@ -49,54 +63,46 @@
     sessionStorage.removeItem('revisor_relogin_notice');
   },true);
 
-  async function syncModels() {
-    if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
+  const uploadedKeys = new Set();
+  async function uploadSessionKeys(models) {
     const token = sessionStorage.getItem('revisor_token');
-    if (!token) {
-      forceReauth('Necesitas volver a ingresar para continuar administrando las IA.');
-      return;
-    }
-    try {
-      const local = JSON.parse(localStorage.getItem('revisor_models') || '[]');
-      if (!Array.isArray(local) || !local.length) return;
-      const sanitized = local.map(m => ({
-        id:m.id,name:m.name,provider:m.provider,model:m.model,endpoint:m.endpoint,
-        priority:m.priority,weight:m.weight,state:m.state,specialty:m.specialty,
-        timeout:m.timeout,temperature:m.temperature,tokens:m.tokens,
-        reviewType:m.reviewType,prompt:m.prompt,lastTest:m.lastTest,level:m.level
-      }));
-      const response = await fetch(`${apiBase}/admin/models/sync`, {
-        method:'POST',
+    if (!token) return;
+    for (const m of models) {
+      const key = sessionStorage.getItem(`revisor_key_${m.id}`);
+      if (!key || uploadedKeys.has(m.id) || m.keyConfigured) continue;
+      const response = await fetch(`${apiBase}/admin/models/${encodeURIComponent(m.id)}`, {
+        method:'PUT',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-        body:JSON.stringify({models:sanitized})
-      });
-      if (response.status === 401) {
-        forceReauth('La sesión anterior pertenecía al backend anterior. Ingresa nuevamente para crear una sesión válida.');
-        return;
-      }
-      const serverModels = await response.json().catch(()=>null);
-      if (response.ok && Array.isArray(serverModels)) {
-        const merged = local.map(m => {
-          const s = serverModels.find(x=>x.id===m.id);
-          return s ? {...m,...s} : m;
-        });
-        localStorage.setItem('revisor_models',JSON.stringify(merged));
-      }
-
-      await Promise.all(local.map(async m => {
-        const key = sessionStorage.getItem(`revisor_key_${m.id}`);
-        if (!key) return;
-        const keyResponse = await fetch(`${apiBase}/admin/models/${encodeURIComponent(m.id)}`, {
-          method:'PUT',
-          headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-          body:JSON.stringify({apiKey:key})
-        }).catch(()=>null);
-        if (keyResponse?.status === 401) forceReauth('Tu sesión administrativa expiró. Ingresa nuevamente.');
-      }));
-    } catch (err) {
-      console.warn('No se pudo sincronizar el catálogo con el backend:',err);
+        body:JSON.stringify({apiKey:key})
+      }).catch(()=>null);
+      if (response?.status === 401) return forceReauth();
+      if (response?.ok) uploadedKeys.add(m.id);
     }
   }
 
-  syncModels();
+  async function refreshModels() {
+    if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
+    const token = sessionStorage.getItem('revisor_token');
+    if (!token) return forceReauth('Necesitas volver a ingresar para continuar administrando las IA.');
+    try {
+      const response = await fetch(`${apiBase}/admin/models`, {headers:{'Authorization':`Bearer ${token}`}});
+      if (response.status === 401) return forceReauth('La sesión anterior ya no es válida. Ingresa nuevamente.');
+      if (!response.ok) return;
+      const serverModels = await response.json();
+      if (!Array.isArray(serverModels)) return;
+      localStorage.setItem('revisor_models', JSON.stringify(serverModels));
+      window.dispatchEvent(new CustomEvent('revisor-models-updated',{detail:serverModels}));
+      if (window.AdminView?.models) {
+        const q=document.getElementById('model-search')?.value||'';
+        const st=document.getElementById('model-status')?.value||'';
+        window.AdminView.models(serverModels,q,st);
+      }
+      await uploadSessionKeys(serverModels);
+    } catch (err) {
+      console.warn('No se pudo actualizar el estado real de las IA:', err);
+    }
+  }
+
+  refreshModels();
+  setInterval(refreshModels, 5000);
 })();
