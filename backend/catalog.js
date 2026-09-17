@@ -1,15 +1,16 @@
 const RUBRIC = [
-  ['Título y delimitación',4],
-  ['Resumen, Abstract y palabras clave',6],
-  ['Introducción, antecedentes y problema',10],
-  ['Objetivos y coherencia',6],
-  ['Metodología',16],
-  ['Resultados',12],
-  ['Discusión',8],
-  ['Conclusiones y recomendaciones',6],
-  ['Referencias',7],
-  ['Redacción y coherencia global',5],
-  ['Formato institucional ÉLITE',20]
+  ['Coherencia título–problema–pregunta–objetivos',8],
+  ['Problema y justificación',6],
+  ['Fundamentación teórica y antecedentes',10],
+  ['Diseño metodológico',15],
+  ['Instrumentos y rigor de la obtención de información',12],
+  ['Población, muestra y recopilación',8],
+  ['Procesamiento y análisis de datos',10],
+  ['Resultados',10],
+  ['Discusión académica',8],
+  ['Conclusiones',6],
+  ['Aporte, utilidad y propuesta',4],
+  ['Calidad académica formal',3]
 ];
 
 // Los IDs son estables para no perder las API keys ya guardadas.
@@ -27,7 +28,7 @@ const DEFAULT_MODELS = [
   id:`model-${i+1}`,
   name:m[0], provider:m[1], reviewType:m[2], specialty:m[2], level:m[3],
   model:m[4], endpoint:m[5], maxInputChars:m[6], priority:m[7],
-  weight:1, state:'Activa', timeout:90, temperature:.2, tokens:6000, prompt:''
+  weight:1, state:'Activa', timeout:90, temperature:.15, tokens:6000, prompt:''
 }));
 
 module.exports = { RUBRIC, DEFAULT_MODELS };
