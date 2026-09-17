@@ -17,7 +17,6 @@
       <form id="student-login" class="grid" autocomplete="off">
         <div class="field"><label for="student-id">Cédula</label><input id="student-id" class="input" inputmode="numeric" maxlength="10" required /></div>
         <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
-        <button id="student-demo" class="btn btn-outline btn-block hidden" type="button">Entrar en modo demostración</button>
         <div id="student-login-msg" class="small muted"></div>
       </form>
     </section>
@@ -35,33 +34,34 @@
 
     <main class="container">
       <section id="student-section-inicio" class="section active">
-        <div class="page-title"><div><h1 id="welcome-title">Hola</h1><p>Revisa el estado de tu artículo y tus intentos disponibles.</p></div><span id="student-demo-badge" class="badge badge-warning hidden"><span class="dot"></span>Modo demostración</span></div>
+        <div class="page-title"><div><h1 id="welcome-title">Hola</h1><p>Revisa el estado de tu artículo y tus intentos disponibles.</p></div></div>
         <div class="grid grid-4" id="student-summary"></div>
         <div class="grid grid-2" style="margin-top:18px">
-          <div class="card"><h3>Próximo paso</h3><p>Sube tu versión actual para ejecutar la revisión académica, referencias, similitud y posible uso de IA.</p><button class="btn btn-primary" data-nav="nueva">Nueva revisión</button></div>
+          <div class="card"><h3>Próximo paso</h3><p>Sube tu versión actual. El sistema combina validaciones automáticas con revisores especializados para reducir errores y uso innecesario de IA.</p><button class="btn btn-primary" data-nav="nueva">Nueva revisión</button></div>
           <div class="card"><h3>Última revisión</h3><div id="last-review"></div></div>
         </div>
       </section>
 
       <section id="student-section-nueva" class="section">
-        <div class="page-title"><div><h1>Nueva revisión</h1><p>El intento solo se descuenta si la revisión se completa con al menos 3 proveedores de IA exitosos.</p></div></div>
+        <div class="page-title"><div><h1>Nueva revisión</h1><p>El intento solo se descuenta cuando se completan los 3 carriles académicos requeridos.</p></div></div>
         <div class="grid grid-2">
           <div class="card">
             <div id="dropzone" class="dropzone"><div style="font-size:32px">⇧</div><h3>Arrastra tu artículo aquí</h3><p>Formatos aceptados: PDF y DOCX.</p><button class="btn btn-outline" id="choose-file" type="button">Seleccionar archivo</button><input id="article-file" type="file" accept=".pdf,.docx" class="hidden"><div id="selected-file"></div></div>
             <div style="margin-top:16px"><button id="start-review" class="btn btn-primary btn-block" disabled>Iniciar revisión</button></div>
           </div>
           <div class="card"><h3>Qué se revisará</h3><div class="steps">
-            <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Evaluación académica</strong><span>Nota sobre 100 y observaciones por sección.</span></div></div>
-            <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Referencias</strong><span>Existencia, actualidad y respaldo real de la cita.</span></div></div>
-            <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Similitud</strong><span>Resultado separado de la nota académica.</span></div></div>
-            <div class="step"><div class="step-icon">4</div><div class="step-text"><strong>Posible uso de IA</strong><span>Indicador orientativo, independiente de la nota.</span></div></div>
+            <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Validaciones automáticas</strong><span>Estructura, secciones, extensión y señales de referencias.</span></div></div>
+            <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Evaluación académica especializada</strong><span>Metodología, resultados, discusión, coherencia y formato.</span></div></div>
+            <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Referencias</strong><span>Actualidad, consistencia y trazabilidad de las fuentes visibles.</span></div></div>
+            <div class="step"><div class="step-icon">4</div><div class="step-text"><strong>Similitud</strong><span>Indicador separado de la nota académica.</span></div></div>
+            <div class="step"><div class="step-icon">5</div><div class="step-text"><strong>Posible uso de IA</strong><span>Indicador orientativo e independiente de la nota.</span></div></div>
           </div></div>
         </div>
       </section>
 
       <section id="student-section-proceso" class="section">
         <div class="page-title"><div><h1>Revisando tu artículo</h1><p>No cierres esta pestaña mientras el análisis está en curso.</p></div></div>
-        <div class="card"><div class="progress"><span id="process-progress" style="width:0%"></span></div><div class="steps" id="process-steps" style="margin-top:20px"></div><div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Privacidad del proceso</strong><div class="small muted">No se muestran los nombres de los modelos que participan. La revisión necesita mínimo 3 y máximo 5 proveedores exitosos.</div></div></div></div>
+        <div class="card"><div class="progress"><span id="process-progress" style="width:0%"></span></div><div class="steps" id="process-steps" style="margin-top:20px"></div><div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Privacidad del proceso</strong><div class="small muted">No se muestran los nombres de los modelos. El sistema completa 3 carriles académicos y reemplaza internamente cualquier proveedor que falle.</div></div></div></div>
       </section>
 
       <section id="student-section-resultado" class="section">
@@ -75,7 +75,7 @@
 
       <section id="student-section-comparar" class="section"><div class="page-title"><div><h1>Comparar revisiones</h1><p>Identifica mejoras, errores persistentes y nuevas observaciones.</p></div></div><div class="card"><div class="form-grid"><div class="field"><label>Primera revisión</label><select id="compare-a" class="select"></select></div><div class="field"><label>Segunda revisión</label><select id="compare-b" class="select"></select></div></div><div style="margin-top:14px"><button id="compare-btn" class="btn btn-primary">Comparar</button></div><div id="compare-result" style="margin-top:20px"></div></div></section>
 
-      <section id="student-section-ayuda" class="section"><div class="page-title"><div><h1>Ayuda</h1><p>Información rápida para usar el sistema.</p></div></div><div class="grid grid-2"><div class="card"><h3>Intentos</h3><p>Cada estudiante inicia con 3 revisiones. Si el sistema no consigue al menos 3 proveedores exitosos, el intento no se descuenta.</p></div><div class="card"><h3>Resultados separados</h3><p>La nota académica, la similitud y la estimación de posible IA son resultados independientes.</p></div><div class="card"><h3>Referencias</h3><p>Las referencias deben ser reales y, salvo autores o teorías clásicas indispensables, corresponder a los últimos 5 años.</p></div><div class="card"><h3>Formato</h3><p>El cumplimiento formal se contrasta con la plantilla oficial de Revista ÉLITE. ORCID y el año provisional de la revista no se penalizan.</p></div></div></section>
+      <section id="student-section-ayuda" class="section"><div class="page-title"><div><h1>Ayuda</h1><p>Información rápida para usar el sistema.</p></div></div><div class="grid grid-2"><div class="card"><h3>Intentos</h3><p>Cada estudiante inicia con 3 revisiones. Si el sistema no completa los 3 carriles académicos, el intento no se descuenta.</p></div><div class="card"><h3>Motor híbrido</h3><p>La revisión combina comprobaciones automáticas y revisores especializados. Los nombres de los modelos no se muestran al estudiante.</p></div><div class="card"><h3>Resultados separados</h3><p>La nota académica, la similitud y la estimación de posible IA son resultados independientes.</p></div><div class="card"><h3>Referencias</h3><p>Las referencias deben ser reales y, salvo autores o teorías clásicas indispensables, corresponder a los últimos 5 años.</p></div><div class="card"><h3>Formato</h3><p>El cumplimiento formal se contrasta con la plantilla oficial de Revista ÉLITE. ORCID y el año provisional de la revista no se penalizan.</p></div></div></section>
     </main>
   </div>
 
