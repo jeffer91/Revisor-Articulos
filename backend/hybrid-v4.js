@@ -265,11 +265,11 @@ async function verifyCriticalCandidates(successes,availableModels,articleText,au
         const context=criticalContext(articleText,candidate),runtime={...model,timeout:Math.min(Number(model.timeout)||90,55),temperature:0};
         const out=await ai.callModel(runtime,buildCriticalVerificationPrompt(context,candidate)),c=out?.json?.confirmation;
         if(!c||String(c.candidateId||'')!==candidate.id)throw new Error('La confirmación crítica no devolvió el identificador esperado.');
-        verified={candidateId:candidate.id,confirmed:c.confirmed===true,impact:['local','major','invalidating'].includes(c.impact)?c.impact:'local',reason:strip(c.reason||''),verifierModelId:model.id};
+        verified={candidateId:candidate.id,confirmed:c.confirmed===true,pending:false,impact:['local','major','invalidating'].includes(c.impact)?c.impact:'local',reason:strip(c.reason||''),verifierModelId:model.id};
         break;
       }catch(err){console.warn(`[critical ${candidate.id}] ${model.provider}/${model.name}: ${String(err?.message||err)}`)}
     }
-    results.push(verified||{candidateId:candidate.id,confirmed:false,impact:'local',reason:'No fue posible obtener una segunda confirmación independiente.',verifierModelId:''});
+    results.push(verified||{candidateId:candidate.id,confirmed:false,pending:true,impact:'local',reason:'No fue posible obtener una segunda confirmación independiente. La alerta queda pendiente y no bloquea automáticamente la aprobación.',verifierModelId:''});
   }
   return results;
 }
@@ -309,14 +309,17 @@ function consolidateHybrid(successes,fileName,cedula,automatic,criticalConfirmat
   normalized.forEach(x=>x.review.observations.forEach(o=>addObservation(o,x.lane?.label||'Revisor')));(automatic?.observations||[]).forEach(o=>addObservation(o,'Validación automática'));
   const rank={Crítico:4,Alto:3,Medio:2,Bajo:1},observations=[...grouped.values()].sort((a,b)=>(rank[b.severity]-rank[a.severity])||(b.consensus-a.consensus)).slice(0,24),confirmedCandidates=candidates.filter(c=>confirmationMap.get(c.id)?.confirmed),critical=confirmedCandidates.map(c=>`${c.title}: ${c.problem}${confirmationMap.get(c.id)?.reason?` — Confirmación independiente: ${confirmationMap.get(c.id).reason}`:''}`).slice(0,10),approvalBlocked=critical.length>0,rawScore=round1(categories.reduce((s,r)=>s+r[2],0)),cap=impactCap(criticalConfirmations),score=round1(Math.min(rawScore,cap));
   const plagiarism=Math.round(median(normalized.map(x=>x.review.plagiarism))),aiEstimate=Math.round(median(normalized.map(x=>x.review.ai)));
+  const uniqueModelIds=[...new Set(successes.map(x=>x.model.id))],reusedModelIds=uniqueModelIds.filter(id=>successes.filter(x=>x.model.id===id).length>1);
+  const redundancy=uniqueModelIds.length>=3?'high':uniqueModelIds.length===2?'reduced':'minimal';
+  const pendingCritical=(criticalConfirmations||[]).filter(c=>c.pending).length;
   return {
-    id:null,n:1,date:new Date().toISOString(),file:fileName,cedula,engine:'hybrid-v4-proportional',score,rawScore,criticalCap:cap<100?cap:null,approved:score>=70&&!approvalBlocked,approvalBlocked,approvalBlockReason:approvalBlocked?'Una segunda revisión independiente confirmó al menos una condición académica crítica. La nota se ajustó según el impacto confirmado.':'',reviewers:successes.length,
+    id:null,n:1,date:new Date().toISOString(),file:fileName,cedula,engine:'hybrid-v4-resilient',score,rawScore,criticalCap:cap<100?cap:null,approved:score>=70&&!approvalBlocked,approvalBlocked,approvalBlockReason:approvalBlocked?'Una segunda revisión independiente confirmó al menos una condición académica crítica. La nota se ajustó según el impacto confirmado.':'',reviewers:successes.length,completedLanes:successes.length,uniqueReviewers:uniqueModelIds.length,redundancy,reusedReviewerCount:reusedModelIds.length,pendingCritical,
     plagiarism,plagiarismRisk:risk(plagiarism),ai:aiEstimate,aiRisk:risk(aiEstimate),categories,observations,critical,
-    criticalConfirmations:(criticalConfirmations||[]).map(c=>({candidateId:c.candidateId,confirmed:!!c.confirmed,impact:c.impact,reason:c.reason})),
+    criticalConfirmations:(criticalConfirmations||[]).map(c=>({candidateId:c.candidateId,confirmed:!!c.confirmed,pending:!!c.pending,impact:c.impact,reason:c.reason})),
     microcriteria:normalized.flatMap(x=>laneMicrocriteria(x.lane).map(m=>{const v=x.review.microMap.get(m.id);return {id:m.id,category:m.category,label:m.label,weight:m.weight,status:v?.status||'No cumple',ratio:v?.ratio??0,evidence:v?.evidence||'',appliedAs:v?.appliedAs||''}})),
     plagiarismMatches:normalized.flatMap(x=>x.review.plagiarismMatches||[]).slice(0,10),aiFlags:normalized.flatMap(x=>x.review.aiFlags||[]).slice(0,10),errors:observations.length,
     automaticChecks:{wordCount:automatic?.wordCount||0,pageCount:automatic?.pageCount??null,presence:automatic?.presence||{},formalStructureScore:automatic?.formalStructureScore||0,referenceSignals:automatic?.referenceSignals||{}},
-    reviewLanes:successes.map(x=>({lane:x.lane?.id||'',label:x.lane?.label||''})),
+    reviewLanes:successes.map((x,i)=>({lane:x.lane?.id||'',label:x.lane?.label||'',reused:successes.findIndex(y=>y.model.id===x.model.id)!==i})),
     reviewModels:successes.map(x=>({id:x.model.id,name:x.model.name,provider:x.model.provider,priority:x.model.priority,function:x.model.reviewType}))
   };
 }
