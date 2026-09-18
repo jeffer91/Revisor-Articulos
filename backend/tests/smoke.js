@@ -27,3 +27,9 @@ assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(statu
 assert.ok(store.includes('FOR UPDATE'),'La reserva de intentos debe usar bloqueo transaccional.');
 
 console.log('Smoke tests V4: OK');
+
+const config=fs.readFileSync(path.join(root,'..','assets','config.js'),'utf8');
+assert.ok(!config.includes('ADMIN_LOGIN_HASH'),'El frontend no debe publicar el hash administrativo.');
+assert.ok(!config.includes('FIREBASE:'),'El frontend no debe publicar la configuración de acceso institucional.');
+assert.ok(!fs.existsSync(path.join(root,'server-v2.js'))&&!fs.existsSync(path.join(root,'server-v3.js')),'Las orquestaciones antiguas no deben quedar en producción.');
+assert.ok(!fs.existsSync(path.join(root,'..','assets','ai-policy.js')),'La política antigua 3-5 IA debe permanecer eliminada.');
