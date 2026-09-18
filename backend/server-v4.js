@@ -58,7 +58,7 @@ async function runReview(job,articleText){
   try{
     const clean=String(articleText||'').replace(/\u0000/g,' ').trim();if(clean.length<700)throw new Error('No se pudo extraer suficiente texto del artículo.');
     const automatic=hybrid.analyzeAutomatic(clean);job.step=2;
-    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/3`,updatedAt:new Date().toISOString()}};
+    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
     job.failures=[];await store.persistJob(job);
 
     const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa').sort((a,b)=>(Number(a.priority)||999)-(Number(b.priority)||999));
