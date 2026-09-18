@@ -39,6 +39,16 @@ async function initDb(){
       last_review_status TEXT NOT NULL DEFAULT 'Sin revisión', last_review_at TIMESTAMPTZ,
       last_review_message TEXT, last_review_job TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS success_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS failure_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS saturation_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS average_latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS circuit_open_until TIMESTAMPTZ;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS configuration_error BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS configuration_error_message TEXT;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_failure_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS review_jobs(
       id UUID PRIMARY KEY, cedula TEXT NOT NULL, file_name TEXT NOT NULL, status TEXT NOT NULL,
       step INTEGER NOT NULL DEFAULT 1, reviewers INTEGER NOT NULL DEFAULT 0, message TEXT,
@@ -57,7 +67,18 @@ async function initDb(){
   await pool.query(`UPDATE review_jobs SET status='failed',message='La revisión fue interrumpida por un reinicio del servicio. El intento no fue descontado.',updated_at=NOW() WHERE status='processing' AND updated_at < NOW()-INTERVAL '15 minutes'`);
 }
 
-function rowToModel(r){ return {...r.config,apiKeyEnc:r.api_key_enc||'',lastTest:r.last_test||'Sin probar',lastTestAt:iso(r.last_test_at),lastTestMessage:r.last_test_message||'',lastReviewStatus:r.last_review_status||'Sin revisión',lastReviewAt:iso(r.last_review_at),lastReviewMessage:r.last_review_message||'',lastReviewJob:r.last_review_job||''}; }
+function rowToModel(r){
+  return {
+    ...r.config,
+    apiKeyEnc:r.api_key_enc||'',
+    lastTest:r.last_test||'Sin probar',lastTestAt:iso(r.last_test_at),lastTestMessage:r.last_test_message||'',
+    lastReviewStatus:r.last_review_status||'Sin revisión',lastReviewAt:iso(r.last_review_at),lastReviewMessage:r.last_review_message||'',lastReviewJob:r.last_review_job||'',
+    successCount:Number(r.success_count||0),failureCount:Number(r.failure_count||0),saturationCount:Number(r.saturation_count||0),
+    consecutiveFailures:Number(r.consecutive_failures||0),averageLatencyMs:Number(r.average_latency_ms||0),
+    circuitOpenUntil:iso(r.circuit_open_until),configurationError:!!r.configuration_error,
+    configurationErrorMessage:r.configuration_error_message||'',lastSuccessAt:iso(r.last_success_at),lastFailureAt:iso(r.last_failure_at)
+  };
+}
 async function loadModels(){ const {rows}=await pool.query(`SELECT * FROM ai_models ORDER BY COALESCE((config->>'priority')::int,999),id`); return rows.map(rowToModel); }
 
 function providerEnvKey(model){
@@ -85,20 +106,86 @@ function configurationProblem(model){
   if(!model.model) return 'Falta el identificador del modelo.';
   return '';
 }
-function cleanModel(m){ const problem=configurationProblem(m); const x={...m,keyConfigured:!!resolveKey(m),configurationReady:!problem,configurationProblem:problem}; delete x.apiKeyEnc; return x; }
+function permanentConfigurationError(message=''){
+  return /wrong api key|invalid api key|api key.*invalid|user not found|unauthori[sz]ed|authentication|invalid token|forbidden|401\b|403\b/i.test(String(message||''));
+}
+function operationalState(model){
+  if(model.state!=='Activa')return 'Inactiva';
+  const problem=configurationProblem(model);
+  const remembered=permanentConfigurationError(model.configurationErrorMessage||model.lastReviewMessage||model.lastTestMessage);
+  if(problem||model.configurationError||remembered)return 'Error de configuración';
+  if(model.circuitOpenUntil&&new Date(model.circuitOpenUntil).getTime()>Date.now())return 'En espera';
+  const last=String(model.lastReviewStatus||'').toLowerCase();
+  if(last.includes('satur')||last.includes('error'))return 'Degradada';
+  return 'Operativa';
+}
+function isModelSelectable(model){
+  const state=operationalState(model);
+  return model.state==='Activa'&&!configurationProblem(model)&&state!=='Error de configuración'&&state!=='En espera';
+}
+function cleanModel(m){
+  const problem=configurationProblem(m),total=Number(m.successCount||0)+Number(m.failureCount||0);
+  const x={...m,keyConfigured:!!resolveKey(m),configurationReady:!problem,configurationProblem:problem,
+    operationalState:operationalState(m),
+    successRate:total?Math.round(Number(m.successCount||0)/total*100):null,
+    averageLatencyMs:Math.round(Number(m.averageLatencyMs||0))
+  };
+  delete x.apiKeyEnc;
+  return x;
+}
 
 async function saveModelConfig(model,apiKey=''){
   const config={...model};
-  ['apiKey','apiKeyEnc','lastTest','lastTestAt','lastTestMessage','lastReviewStatus','lastReviewAt','lastReviewMessage','lastReviewJob','keyConfigured','configurationReady','configurationProblem'].forEach(k=>delete config[k]);
+  ['apiKey','apiKeyEnc','lastTest','lastTestAt','lastTestMessage','lastReviewStatus','lastReviewAt','lastReviewMessage','lastReviewJob','keyConfigured','configurationReady','configurationProblem','operationalState','successRate','successCount','failureCount','saturationCount','consecutiveFailures','averageLatencyMs','circuitOpenUntil','configurationError','configurationErrorMessage','lastSuccessAt','lastFailureAt'].forEach(k=>delete config[k]);
   const encrypted=apiKey?encryptSecret(apiKey):null;
   await pool.query(`INSERT INTO ai_models(id,config,api_key_enc,updated_at) VALUES($1,$2::jsonb,$3,NOW())
-    ON CONFLICT(id) DO UPDATE SET config=EXCLUDED.config,api_key_enc=COALESCE(EXCLUDED.api_key_enc,ai_models.api_key_enc),updated_at=NOW()`,[model.id,JSON.stringify(config),encrypted]);
+    ON CONFLICT(id) DO UPDATE SET
+      config=EXCLUDED.config,
+      api_key_enc=COALESCE(EXCLUDED.api_key_enc,ai_models.api_key_enc),
+      configuration_error=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN FALSE ELSE ai_models.configuration_error END,
+      configuration_error_message=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN NULL ELSE ai_models.configuration_error_message END,
+      circuit_open_until=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN NULL ELSE ai_models.circuit_open_until END,
+      updated_at=NOW()`,[model.id,JSON.stringify(config),encrypted]);
   const all=await loadModels(); return all.find(x=>x.id===model.id);
 }
-async function updateModelTest(id,status,message=''){ await pool.query(`UPDATE ai_models SET last_test=$2,last_test_at=NOW(),last_test_message=$3,updated_at=NOW() WHERE id=$1`,[id,status,String(message).slice(0,1200)]); }
+async function updateModelTest(id,status,message=''){
+  const msg=String(message||'').slice(0,1200),permanent=permanentConfigurationError(msg),saturated=status==='Saturada';
+  await pool.query(`UPDATE ai_models SET
+    last_test=$2,last_test_at=NOW(),last_test_message=$3,
+    configuration_error=CASE WHEN $2='Correcta' THEN FALSE WHEN $4 THEN TRUE ELSE configuration_error END,
+    configuration_error_message=CASE WHEN $2='Correcta' THEN NULL WHEN $4 THEN $3 ELSE configuration_error_message END,
+    circuit_open_until=CASE WHEN $2='Correcta' THEN NULL WHEN $5 THEN NOW()+INTERVAL '10 minutes' ELSE circuit_open_until END,
+    consecutive_failures=CASE WHEN $2='Correcta' THEN 0 ELSE consecutive_failures END,
+    updated_at=NOW()
+    WHERE id=$1`,[id,status,msg,permanent,saturated]);
+}
 async function updateModelReviewHealth(model,status,message='',jobId='',latencyMs=null){
-  const detail=(String(message||'')+(latencyMs!=null?`${message?' · ':''}${latencyMs} ms`:'' )).slice(0,1200);
-  await pool.query(`UPDATE ai_models SET last_review_status=$2,last_review_at=NOW(),last_review_message=$3,last_review_job=$4,updated_at=NOW() WHERE id=$1`,[model.id,status,detail,jobId]);
+  const raw=String(message||''),detail=(raw+(latencyMs!=null?`${raw?' · ':''}${latencyMs} ms`:'' )).slice(0,1200);
+  const permanent=permanentConfigurationError(raw),ok=status==='Correcta',saturated=status==='Saturada';
+  const latency=Number.isFinite(Number(latencyMs))?Math.max(0,Number(latencyMs)):null;
+  if(ok){
+    await pool.query(`UPDATE ai_models SET
+      last_review_status=$2,last_review_at=NOW(),last_review_message=$3,last_review_job=$4,
+      success_count=success_count+1,consecutive_failures=0,
+      average_latency_ms=CASE WHEN $5::double precision IS NULL THEN average_latency_ms WHEN success_count=0 THEN $5 ELSE ((average_latency_ms*success_count)+$5)/(success_count+1) END,
+      circuit_open_until=NULL,configuration_error=FALSE,configuration_error_message=NULL,last_success_at=NOW(),updated_at=NOW()
+      WHERE id=$1`,[model.id,status,detail,jobId,latency]);
+    return;
+  }
+  await pool.query(`UPDATE ai_models SET
+    last_review_status=$2,last_review_at=NOW(),last_review_message=$3,last_review_job=$4,
+    failure_count=failure_count+1,
+    saturation_count=saturation_count+CASE WHEN $5 THEN 1 ELSE 0 END,
+    consecutive_failures=consecutive_failures+1,
+    circuit_open_until=CASE
+      WHEN $6 THEN NULL
+      WHEN $5 THEN NOW()+CASE WHEN consecutive_failures>=1 THEN INTERVAL '20 minutes' ELSE INTERVAL '10 minutes' END
+      WHEN consecutive_failures>=1 THEN NOW()+INTERVAL '15 minutes'
+      ELSE circuit_open_until END,
+    configuration_error=CASE WHEN $6 THEN TRUE ELSE configuration_error END,
+    configuration_error_message=CASE WHEN $6 THEN $3 ELSE configuration_error_message END,
+    last_failure_at=NOW(),updated_at=NOW()
+    WHERE id=$1`,[model.id,status,detail,jobId,saturated,permanent]);
 }
 
 async function createJob(job){ await pool.query(`INSERT INTO review_jobs(id,cedula,file_name,status,step,reviewers,message,failures,provider_statuses,consumes_attempt) VALUES($1,$2,$3,$4,$5,0,'','[]'::jsonb,'{}'::jsonb,FALSE)`,[job.id,job.cedula,job.file,job.status,job.step]); }
@@ -119,4 +206,4 @@ async function grantAttempts(cedula,count=1){ count=Math.max(1,Math.min(20,Numbe
 async function restoreAttempt(jobId){ await pool.query(`UPDATE review_jobs SET consumes_attempt=FALSE,updated_at=NOW() WHERE id=$1`,[jobId]); }
 async function listJobs(){ const {rows}=await pool.query(`SELECT id,cedula,file_name,status,step,reviewers,message,failures,provider_statuses,created_at,updated_at FROM review_jobs ORDER BY created_at DESC LIMIT 50`); return rows; }
 
-module.exports={pool,initDb,loadModels,resolveKey,cloudflareAccountId,configurationProblem,cleanModel,saveModelConfig,updateModelTest,updateModelReviewHealth,createJob,persistJob,getJob,getStudentState,grantAttempts,restoreAttempt,listJobs};
+module.exports={pool,initDb,loadModels,resolveKey,cloudflareAccountId,configurationProblem,permanentConfigurationError,operationalState,isModelSelectable,cleanModel,saveModelConfig,updateModelTest,updateModelReviewHealth,createJob,persistJob,getJob,getStudentState,grantAttempts,restoreAttempt,listJobs};
