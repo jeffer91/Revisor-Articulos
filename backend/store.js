@@ -49,6 +49,14 @@ async function initDb(){
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS configuration_error_message TEXT;
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ;
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_failure_at TIMESTAMPTZ;
+    UPDATE ai_models
+      SET configuration_error=TRUE,
+          configuration_error_message=COALESCE(configuration_error_message,last_review_message,last_test_message)
+      WHERE configuration_error=FALSE
+        AND (
+          COALESCE(last_review_message,'') ~* '(wrong api key|invalid api key|user not found|unauthorized|authentication|invalid token|forbidden|401|403)'
+          OR COALESCE(last_test_message,'') ~* '(wrong api key|invalid api key|user not found|unauthorized|authentication|invalid token|forbidden|401|403)'
+        );
     CREATE TABLE IF NOT EXISTS review_jobs(
       id UUID PRIMARY KEY, cedula TEXT NOT NULL, file_name TEXT NOT NULL, status TEXT NOT NULL,
       step INTEGER NOT NULL DEFAULT 1, reviewers INTEGER NOT NULL DEFAULT 0, message TEXT,
@@ -76,7 +84,8 @@ function rowToModel(r){
     successCount:Number(r.success_count||0),failureCount:Number(r.failure_count||0),saturationCount:Number(r.saturation_count||0),
     consecutiveFailures:Number(r.consecutive_failures||0),averageLatencyMs:Number(r.average_latency_ms||0),
     circuitOpenUntil:iso(r.circuit_open_until),configurationError:!!r.configuration_error,
-    configurationErrorMessage:r.configuration_error_message||'',lastSuccessAt:iso(r.last_success_at),lastFailureAt:iso(r.last_failure_at)
+    configurationErrorMessage:r.configuration_error_message||'',lastSuccessAt:iso(r.last_success_at),lastFailureAt:iso(r.last_failure_at),
+    successRate:(Number(r.success_count||0)+Number(r.failure_count||0))?Math.round(Number(r.success_count||0)/(Number(r.success_count||0)+Number(r.failure_count||0))*100):null
   };
 }
 async function loadModels(){ const {rows}=await pool.query(`SELECT * FROM ai_models ORDER BY COALESCE((config->>'priority')::int,999),id`); return rows.map(rowToModel); }
@@ -112,8 +121,7 @@ function permanentConfigurationError(message=''){
 function operationalState(model){
   if(model.state!=='Activa')return 'Inactiva';
   const problem=configurationProblem(model);
-  const remembered=permanentConfigurationError(model.configurationErrorMessage||model.lastReviewMessage||model.lastTestMessage);
-  if(problem||model.configurationError||remembered)return 'Error de configuración';
+  if(problem||model.configurationError)return 'Error de configuración';
   if(model.circuitOpenUntil&&new Date(model.circuitOpenUntil).getTime()>Date.now())return 'En espera';
   const last=String(model.lastReviewStatus||'').toLowerCase();
   if(last.includes('satur')||last.includes('error'))return 'Degradada';
@@ -145,6 +153,8 @@ async function saveModelConfig(model,apiKey=''){
       configuration_error=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN FALSE ELSE ai_models.configuration_error END,
       configuration_error_message=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN NULL ELSE ai_models.configuration_error_message END,
       circuit_open_until=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN NULL ELSE ai_models.circuit_open_until END,
+      last_review_status=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN 'Sin revisión' ELSE ai_models.last_review_status END,
+      last_review_message=CASE WHEN EXCLUDED.api_key_enc IS NOT NULL THEN NULL ELSE ai_models.last_review_message END,
       updated_at=NOW()`,[model.id,JSON.stringify(config),encrypted]);
   const all=await loadModels(); return all.find(x=>x.id===model.id);
 }
