@@ -40,6 +40,7 @@ function verifySession(token,types=[]){
   }catch{return null}
 }
 function bearer(req){const a=String(req.headers.authorization||'');return a.startsWith('Bearer ')?a.slice(7):''}
+function clientIp(req){return String(req.headers['x-forwarded-for']||'').split(',')[0].trim()||clientIp(req)}
 function requireAdmin(req,res,origin){
   const session=verifySession(bearer(req),['admin']);
   if(!session){json(res,401,{message:'Sesión administrativa no válida.'},origin);return null}
@@ -297,7 +298,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='GET'&&url.pathname==='/health'){const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),ready=active.filter(store.isModelSelectable);return json(res,200,{ok:true,service:'Revisor Artículos API',engine:'hybrid-v4-resilient',database:true,models:models.length,active:active.length,ready:ready.length,providers:[...new Set(models.map(m=>m.provider))],time:new Date().toISOString()},origin)}
 
     if(req.method==='POST'&&url.pathname==='/student/login'){
-      const ip=req.socket.remoteAddress||'unknown';
+      const ip=clientIp(req);
       if(!allowRequest(`student-login:${ip}`,15,10*60*1000))return json(res,429,{message:'Demasiados intentos de acceso. Intenta más tarde.'},origin);
       const body=await readJson(req),cedula=String(body.cedula||'').trim();
       if(!/^\d{10}$/.test(cedula))return json(res,400,{message:'Cédula inválida.'},origin);
@@ -307,7 +308,7 @@ const server=http.createServer(async(req,res)=>{
     }
 
     if(req.method==='POST'&&url.pathname==='/research/login'){
-      const body=await readJson(req),ip=req.socket.remoteAddress||'unknown';
+      const body=await readJson(req),ip=clientIp(req);
       if(!allowRequest(`research-login:${ip}`,10,10*60*1000))return json(res,429,{message:'Demasiados intentos. Intenta más tarde.'},origin);
       const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);
       if(!safeHashMatch(hash,RESEARCH_LOGIN_HASH))return json(res,401,{message:'Usuario o PIN incorrectos.'},origin);
@@ -315,7 +316,7 @@ const server=http.createServer(async(req,res)=>{
     }
 
     if(req.method==='POST'&&url.pathname==='/admin/login'){
-      const body=await readJson(req),ip=req.socket.remoteAddress||'unknown',now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
+      const body=await readJson(req),ip=clientIp(req),now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
       if(rec.until>now)return json(res,429,{message:'Demasiados intentos. Intenta nuevamente en unos minutos.'},origin);
       const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);if(!safeHashMatch(hash,ADMIN_LOGIN_HASH)){rec.count++;if(rec.count>=7){rec.until=now+600000;rec.count=0}loginAttempts.set(ip,rec);return json(res,401,{message:'Usuario o PIN incorrectos.'},origin)}
       loginAttempts.delete(ip);return json(res,200,{token:signSession('admin','admin',8*60*60*1000),expiresIn:28800},origin);
@@ -356,7 +357,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&url.pathname==='/reviews'){
       const session=verifySession(bearer(req),['student','research']);
       if(!session)return json(res,401,{message:'Debes iniciar sesión antes de revisar un artículo.'},origin);
-      const ip=req.socket.remoteAddress||'unknown';
+      const ip=clientIp(req);
       if(!allowRequest(`review-start:${session.type}:${session.sub}:${ip}`,8,60*60*1000))return json(res,429,{message:'Se alcanzó el límite temporal de inicios de revisión. Intenta más tarde.'},origin);
       const body=await readJson(req,3_000_000),fileName=String(body.fileName||'articulo').slice(0,180),articleText=String(body.articleText||'');
       if(articleText.length<700)return json(res,400,{message:'No se pudo extraer suficiente texto del artículo.'},origin);
