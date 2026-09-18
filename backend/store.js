@@ -77,7 +77,7 @@ async function initDb(){
   for(const m of DEFAULT_MODELS){
     await pool.query(`INSERT INTO ai_models(id,config) VALUES($1,$2::jsonb) ON CONFLICT(id) DO NOTHING`,[m.id,JSON.stringify(m)]);
   }
-  await pool.query(`UPDATE review_jobs SET status='failed',message='La revisión fue interrumpida por un reinicio del servicio. El intento no fue descontado.',updated_at=NOW() WHERE status='processing' AND updated_at < NOW()-INTERVAL '15 minutes'`);
+  await pool.query(`UPDATE review_jobs SET status='failed',message='La revisión fue interrumpida por un reinicio del servicio. El intento no fue descontado.',consumes_attempt=FALSE,updated_at=NOW() WHERE status='processing'`);
 }
 
 function rowToModel(r){
