@@ -28,8 +28,8 @@
       alerts=reviews.flatMap(r=>(r.critical||[]).map(detail=>({type:'Crítica',student:r.student,date:r.date,detail,state:'Pendiente'})));
       for(const s of students){
         const own=centralJobs.filter(j=>j.cedula===s.cedula),completed=own.filter(j=>j.status==='complete'&&j.consumes_attempt);
-        const processing=own.filter(j=>j.status==='processing').length;
-        s.used=completed.length;s.available=Math.max(0,3-s.used-processing);s.lastReview=completed.at(-1)?.created_at||'';
+        const processing=own.filter(j=>j.status==='processing').length,allowed=Number(own[0]?.total_allowed||3);
+        s.used=completed.length;s.available=Math.max(0,allowed-s.used-processing);s.lastReview=completed.at(-1)?.created_at||'';
       }
       return;
     }
