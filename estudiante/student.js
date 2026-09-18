@@ -1,5 +1,5 @@
 (() => {
-  const { $, $$, api, firebaseGetStudent, toast, modal, config } = window.Revisor;
+  const { $, $$, api, esc, toast, modal, config } = window.Revisor;
   const D = window.STUDENT_DEMO_DATA;
   const V = window.StudentView;
   let file=null, student=null, result=null, tab='academico';
@@ -9,10 +9,10 @@
 
   const localStateKey=cedula=>`revisor_student_state_${cedula}`;
   const loadStudentState=cedula=>{try{return JSON.parse(localStorage.getItem(localStateKey(cedula))||'null')}catch{return null}};
-  const saveStudentState=()=>{if(!student?.cedula)return;localStorage.setItem(localStateKey(student.cedula),JSON.stringify({used:student.used,available:student.available,reviews:student.reviews||[]}))};
+  const saveStudentState=()=>{if(config.API_BASE_URL||!student?.cedula)return;localStorage.setItem(localStateKey(student.cedula),JSON.stringify({used:student.used,available:student.available,reviews:student.reviews||[]}))};
 
-  const mapFirebaseStudent=data=>{
-    const cedula=String(data.cedula||data.id||data.firebaseDocumentId||'').trim(),local=loadStudentState(cedula)||{},reviews=Array.isArray(local.reviews)?local.reviews:[];
+  const mapStudent=data=>{
+    const cedula=String(data.cedula||data.id||data.firebaseDocumentId||'').trim(),local=config.API_BASE_URL?{}:(loadStudentState(cedula)||{}),reviews=Array.isArray(local.reviews)?local.reviews:[];
     const used=Number.isFinite(local.used)?local.used:reviews.length,available=Number.isFinite(local.available)?local.available:Math.max(0,3-used);
     return {id:data.id||cedula,cedula,name:data.nombres||'Estudiante',career:data.nombreCarreraActual||'',careerCode:data.codigoCarreraActual||'',campus:data.sede||'',institutionalEmail:data.correoInstitucional||'',personalEmail:data.correoPersonal||'',phone:data.celular||'',used,available,reviews,firebaseDocumentId:data.firebaseDocumentId||cedula};
   };
@@ -33,19 +33,35 @@
     if(student.reviews.length>1){$('#compare-a').value=student.reviews[0].id;$('#compare-b').value=student.reviews.at(-1).id}
   };
 
-  const showApp=s=>{student=s;$('#student-login-view').classList.add('hidden');$('#student-app-view').classList.remove('hidden');$('#student-name-pill').textContent=s.name;$('#welcome-title').textContent=`Hola, ${s.name.split(' ')[0]}`;refresh();nav('inicio')};
+  async function checkPendingReview(){
+    const id=sessionStorage.getItem('revisor_pending_job');if(!id||!student)return;
+    try{
+      const status=await api(`/reviews/${id}/status`);
+      if(status.status==='complete'){
+        const r=await api(`/reviews/${id}`);sessionStorage.removeItem('revisor_pending_job');await applyRemoteState(student);refresh();showResult(r);toast('Tu revisión pendiente ya finalizó.','success');
+      }else if(['incomplete','failed'].includes(status.status)){
+        sessionStorage.removeItem('revisor_pending_job');await applyRemoteState(student);refresh();toast(status.message||'La revisión pendiente no se completó.','danger');
+      }else{
+        toast('Tienes una revisión todavía en proceso. No inicies otra hasta que finalice.','info');
+      }
+    }catch(err){console.warn('No se pudo recuperar la revisión pendiente:',err)}
+  }
+  const showApp=s=>{student=s;$('#student-login-view').classList.add('hidden');$('#student-app-view').classList.remove('hidden');$('#student-name-pill').textContent=s.name;$('#welcome-title').textContent=`Hola, ${s.name.split(' ')[0]}`;refresh();nav('inicio');checkPendingReview()};
 
   $('#student-login').addEventListener('submit',async e=>{
-    e.preventDefault();const cedula=$('#student-id').value.trim();$('#student-login-msg').textContent='Consultando registro en UTET…';
+    e.preventDefault();const cedula=$('#student-id').value.trim();$('#student-login-msg').textContent='Validando registro institucional…';
     if(!/^\d{10}$/.test(cedula)){$('#student-login-msg').textContent='Ingresa una cédula válida de 10 dígitos.';return}
     try{
-      const data=await firebaseGetStudent(cedula);if(!data){$('#student-login-msg').textContent='Estudiante no registrado. Verifica tu cédula o comunícate con la coordinación.';return}
-      sessionStorage.setItem('revisor_student_cedula',cedula);const s=mapFirebaseStudent(data);student=s;await applyRemoteState(s);showApp(s);toast('Registro validado.','success');
-    }catch(err){console.error(err);$('#student-login-msg').textContent=err.message==='FIREBASE_PERMISSION_DENIED'?'No fue posible validar el registro por permisos de Firestore.':'No fue posible consultar Firebase en este momento. Intenta nuevamente.'}
+      const auth=await api('/student/login',{method:'POST',body:JSON.stringify({cedula})});
+      if(!auth?.token||!auth?.student)throw new Error('No fue posible crear la sesión de estudiante.');
+      sessionStorage.removeItem('revisor_research_token');sessionStorage.setItem('revisor_student_token',auth.token);
+      sessionStorage.setItem('revisor_student_cedula',cedula);
+      const s=mapStudent(auth.student);student=s;await applyRemoteState(s);showApp(s);toast('Registro validado.','success');
+    }catch(err){console.error(err);$('#student-login-msg').textContent=err.message||'No fue posible validar el registro en este momento.'}
   });
-  $('#student-logout').addEventListener('click',()=>{sessionStorage.removeItem('revisor_student_cedula');location.reload()});
+  $('#student-logout').addEventListener('click',()=>{const cedula=sessionStorage.getItem('revisor_student_cedula');if(cedula)localStorage.removeItem(localStateKey(cedula));sessionStorage.removeItem('revisor_student_token');sessionStorage.removeItem('revisor_student_cedula');sessionStorage.removeItem('revisor_pending_job');location.reload()});
 
-  const setFile=f=>{if(!f)return;if(!/\.(pdf|docx)$/i.test(f.name)){toast('Solo se aceptan archivos PDF o DOCX.','danger');return}file=f;$('#selected-file').innerHTML=`<div class="file-chip"><div style="font-size:24px">▤</div><div class="grow"><strong>${f.name}</strong><span>${(f.size/1024/1024).toFixed(2)} MB</span></div><button class="btn btn-ghost btn-sm" id="remove-file">✕</button></div>`;$('#start-review').disabled=false};
+  const setFile=f=>{if(!f)return;if(!/\.(pdf|docx)$/i.test(f.name)){toast('Solo se aceptan archivos PDF o DOCX.','danger');return}if(f.size>25*1024*1024){toast('El archivo supera el límite de 25 MB.','danger');return}file=f;$('#selected-file').innerHTML=`<div class="file-chip"><div style="font-size:24px">▤</div><div class="grow"><strong>${esc(f.name)}</strong><span>${(f.size/1024/1024).toFixed(2)} MB</span></div><button class="btn btn-ghost btn-sm" id="remove-file">✕</button></div>`;$('#start-review').disabled=false};
   $('#choose-file').addEventListener('click',()=>$('#article-file').click());
   $('#article-file').addEventListener('change',e=>setFile(e.target.files[0]));
   $('#dropzone').addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag')});
@@ -60,7 +76,7 @@
 
   function processOutcome(message,type='danger'){
     let box=$('#process-outcome');if(!box){box=document.createElement('div');box.id='process-outcome';box.style.marginTop='18px';$('#student-section-proceso .card')?.appendChild(box)}
-    box.innerHTML=`<div class="alert alert-${type}"><div><strong>${type==='success'?'Revisión completada':'No fue posible completar la revisión'}</strong><div class="small" style="margin-top:4px">${message}</div><div style="margin-top:12px"><button class="btn btn-outline btn-sm" data-retry-review>Volver a Nueva revisión</button></div></div></div>`;
+    const title=type==='success'?'Revisión completada':type==='warning'?'Revisión aún en proceso':'No fue posible completar la revisión';box.innerHTML=`<div class="alert alert-${type}"><div><strong>${title}</strong><div class="small" style="margin-top:4px">${esc(message)}</div><div style="margin-top:12px"><button class="btn btn-outline btn-sm" data-retry-review>Volver a Nueva revisión</button></div></div></div>`;
   }
   const clearOutcome=()=>{const b=$('#process-outcome');if(b)b.innerHTML=''};
 
@@ -68,6 +84,7 @@
     if(!window.pdfjsLib)throw new Error('No se pudo cargar el lector PDF. Recarga la página e intenta nuevamente.');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const data=new Uint8Array(await sourceFile.arrayBuffer()),pdf=await window.pdfjsLib.getDocument({data}).promise,pages=[];
+    if(pdf.numPages>100)throw new Error('El PDF supera el límite de 100 páginas.');
     for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i),content=await page.getTextContent(),text=content.items.map(item=>item.str||'').join(' ').replace(/\s+/g,' ').trim();pages.push(`\n[Página ${i}]\n${text}`)}
     return pages.join('\n').trim();
   }
@@ -78,19 +95,19 @@
     modal('confirm-review-modal',false);if(!config.API_BASE_URL){toast('El servicio de revisión con IA no está conectado.','danger');return}
     nav('proceso');clearOutcome();let currentStep=0;progress(currentStep);
     try{
-      const articleText=await extractArticleText(file);if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
-      currentStep=1;progress(currentStep);const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:student.cedula,fileName:file.name,articleText})});
-      let status,i=2;const deadline=Date.now()+10*60*1000;
+      const articleText=await extractArticleText(file);if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');if(articleText.length>2500000)throw new Error('El documento extraído es demasiado extenso para una revisión segura.');
+      currentStep=1;progress(currentStep);const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:student.cedula,fileName:file.name,articleText})});sessionStorage.setItem('revisor_pending_job',start.id);
+      let status,i=2;const deadline=Date.now()+20*60*1000;
       do{
-        if(Date.now()>deadline)throw new Error('La revisión superó el tiempo máximo de espera.');
+        if(Date.now()>deadline){processOutcome('La revisión continúa en el servidor. No inicies otra revisión mientras este trabajo siga activo; vuelve a ingresar más tarde para consultar el estado.','warning');return}
         await new Promise(r=>setTimeout(r,1800));status=await api(`/reviews/${start.id}/status`);i=Math.min(labels.length-1,Math.max(i,status.step||i));currentStep=i;progress(i);const detail=$('#process-detail');if(detail&&status.message)detail.textContent=status.message
       }while(!['complete','incomplete','failed'].includes(status.status));
       if(status.status==='complete'){
-        progress(labels.length);const r=await api(`/reviews/${start.id}`);await applyRemoteState(student);refresh();showResult(r);toast(`Revisión completada: 3 carriles · redundancia ${r.redundancy==='high'?'alta':r.redundancy==='reduced'?'reducida':'mínima'}.`,'success');
+        progress(labels.length);const r=await api(`/reviews/${start.id}`);sessionStorage.removeItem('revisor_pending_job');await applyRemoteState(student);refresh();showResult(r);toast(`Revisión completada: 3 carriles · redundancia ${r.redundancy==='high'?'alta':r.redundancy==='reduced'?'reducida':'mínima'}.`,'success');
       }else{
-        progressFailed(status.step??currentStep);await applyRemoteState(student);refresh();processOutcome(status.message||'El sistema no alcanzó los 3 carriles académicos. Tu intento no fue descontado.','danger');
+        sessionStorage.removeItem('revisor_pending_job');progressFailed(status.step??currentStep);await applyRemoteState(student);refresh();processOutcome(status.message||'El sistema no alcanzó los 3 carriles académicos.','danger');
       }
-    }catch(err){console.error(err);progressFailed(currentStep);await applyRemoteState(student);refresh();processOutcome(`${err.message||'Ocurrió un error técnico.'} Tu intento no fue descontado.`,'danger')}
+    }catch(err){console.error(err);progressFailed(currentStep);await applyRemoteState(student);refresh();processOutcome(`${err.message||'Ocurrió un error técnico.'} El intento solo se contabiliza si el backend completa correctamente la revisión.`,'danger')}
   }
   $('#confirm-start').addEventListener('click',runReal);
 
@@ -108,8 +125,8 @@
     const common=bc.filter(c=>aByName.has(String(c[0]))).length;
     const rubricNotice=common<Math.min(ac.length,bc.length)?'<div class="alert alert-info" style="margin-top:18px"><div>ℹ</div><div><strong>Rúbricas diferentes</strong><div class="small">Las revisiones fueron realizadas con criterios distintos. Las categorías sin equivalente se muestran como no comparables; la nota global debe interpretarse con cautela.</div></div></div>':'';
     const rows=bc.map(c=>{const old=aByName.get(String(c[0])),av=old?.[2],comparable=Number.isFinite(Number(av)),ch=comparable?(Number(c[2])-Number(av)).toFixed(1):null;return `<tr><td>${c[0]}</td><td>${comparable?`${av}/${old[1]}`:'—'}</td><td>${c[2]}/${c[1]}</td><td class="${ch===null?'':Number(ch)>=0?'text-success':'text-danger'}">${ch===null?'No comparable':`${Number(ch)>=0?'+':''}${ch}`}</td></tr>`}).join('');
-    $('#compare-result').innerHTML=`<div class="grid grid-4"><div class="card metric"><div class="metric-label">Cambio de nota</div><div class="metric-value ${diff>=0?'text-success':'text-danger'}">${diff>=0?'+':''}${diff}</div></div><div class="card metric"><div class="metric-label">Similitud</div><div class="metric-value">${a.plagiarism}% → ${b.plagiarism}%</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${a.ai}% → ${b.ai}%</div></div><div class="card metric"><div class="metric-label">Errores</div><div class="metric-value">${a.errors??'—'} → ${b.errors??'—'}</div></div></div>${rubricNotice}${bc.length?`<div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Área</th><th>Revisión ${a.n}</th><th>Revisión ${b.n}</th><th>Cambio</th></tr></thead><tbody>${rows}</tbody></table></div>`:''}`;
+    $('#compare-result').innerHTML=`<div class="grid grid-4"><div class="card metric"><div class="metric-label">Cambio de nota</div><div class="metric-value ${diff>=0?'text-success':'text-danger'}">${diff>=0?'+':''}${diff}</div></div><div class="card metric"><div class="metric-label">Similitud orientativa</div><div class="metric-value">${a.plagiarism}% → ${b.plagiarism}%</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${a.ai}% → ${b.ai}%</div></div><div class="card metric"><div class="metric-label">Errores</div><div class="metric-value">${a.errors??'—'} → ${b.errors??'—'}</div></div></div>${rubricNotice}${bc.length?`<div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Área</th><th>Revisión ${a.n}</th><th>Revisión ${b.n}</th><th>Cambio</th></tr></thead><tbody>${rows}</tbody></table></div>`:''}`;
   });
 
-  $('#download-report').addEventListener('click',()=>{if(!result)return;const txt=[`REVISIÓN ACADÉMICA ITSQMET`,`Archivo: ${result.file}`,`Nota académica: ${result.score}/100`,`Redundancia: ${result.redundancy||'—'} · Revisores únicos: ${result.uniqueReviewers??result.reviewers}`,`Estado: ${result.approved?'APROBADO':'NO APROBADO'}`,result.approvalBlocked?`Condición crítica: ${result.approvalBlockReason||'Debe corregirse antes de aprobar.'}`:'',`Similitud: ${result.plagiarism}%`,`Posible IA: ${result.ai}%`,`Carriles académicos completos: ${result.reviewers}`,'',...(result.categories||[]).map(c=>`${c[0]}: ${c[2]}/${c[1]}`),'',...(result.observations||[]).map(o=>`${o.severity} · ${o.section} · ${o.title}\n${o.problem}\nCorrección: ${o.fix}\n`)].filter(Boolean).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));a.download='informe-revision.txt';a.click();URL.revokeObjectURL(a.href)});
+  $('#download-report').addEventListener('click',()=>{if(!result)return;const txt=[`REVISIÓN ACADÉMICA ITSQMET`,`Archivo: ${result.file}`,`Nota académica: ${result.score}/100`,`Redundancia: ${result.redundancy||'—'} · Revisores únicos: ${result.uniqueReviewers??result.reviewers}`,`Estado: ${result.approved?'APROBADO':'NO APROBADO'}`,result.approvalBlocked?`Condición crítica: ${result.approvalBlockReason||'Debe corregirse antes de aprobar.'}`:'',`Similitud orientativa: ${result.plagiarism}%`,`Posible IA: ${result.ai}%`,`Carriles académicos completos: ${result.reviewers}`,'',...(result.categories||[]).map(c=>`${c[0]}: ${c[2]}/${c[1]}`),'',...(result.observations||[]).map(o=>`${o.severity} · ${o.section} · ${o.title}\n${o.problem}\nCorrección: ${o.fix}\n`)].filter(Boolean).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));a.download='informe-revision.txt';a.click();URL.revokeObjectURL(a.href)});
 })();

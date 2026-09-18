@@ -103,6 +103,37 @@
     }
   }
 
-  refreshModels();
-  setInterval(refreshModels, 5000);
+  async function refreshJobs() {
+    if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
+    const token = sessionStorage.getItem('revisor_token');
+    if (!token) return;
+    try {
+      const response = await fetch(`${apiBase}/admin/jobs`, {headers:{'Authorization':`Bearer ${token}`}});
+      if (response.status === 401) return forceReauth('La sesión anterior ya no es válida. Ingresa nuevamente.');
+      if (!response.ok) return;
+      const jobs = await response.json();
+      if (Array.isArray(jobs)) window.dispatchEvent(new CustomEvent('revisor-jobs-updated',{detail:jobs}));
+    } catch (err) {
+      console.warn('No se pudo actualizar el historial centralizado:', err);
+    }
+  }
+
+  async function refreshStudents() {
+    if (sessionStorage.getItem('revisor_admin_auth') !== '1') return;
+    const token = sessionStorage.getItem('revisor_token');
+    if (!token) return;
+    try {
+      const response = await fetch(`${apiBase}/admin/students`, {headers:{'Authorization':`Bearer ${token}`}});
+      if (response.status === 401) return forceReauth('La sesión anterior ya no es válida. Ingresa nuevamente.');
+      if (!response.ok) return;
+      const items = await response.json();
+      if (Array.isArray(items)) window.dispatchEvent(new CustomEvent('revisor-students-updated',{detail:items}));
+    } catch (err) {
+      console.warn('No se pudo actualizar el listado centralizado de estudiantes:', err);
+    }
+  }
+
+  const refreshAll=async()=>{await Promise.all([refreshModels(),refreshJobs(),refreshStudents()])};
+  refreshAll();
+  setInterval(refreshAll, 5000);
 })();

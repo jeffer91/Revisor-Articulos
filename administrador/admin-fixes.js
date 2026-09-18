@@ -33,7 +33,8 @@
     let state={used:s.used||0,available:s.available??3,reviews:[]};
     try{state=await window.Revisor.api(`/students/${s.cedula}/state`);saveRemoteStudentState(s.cedula,state)}catch(err){console.warn(err)}
     const body=document.getElementById('student-modal-body');if(!body)return;
-    body.innerHTML=`<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${esc(state.used)}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${esc(state.available)}</div></div></div><h3 style="margin-top:20px">${esc(s.name)}</h3><p class="muted">${esc(s.cedula)} · ${esc(s.career||'')}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${esc(id)}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${esc(id)}">Restaurar intento</button></div><div class="small muted">Los cambios se guardan centralmente y no eliminan el historial.</div>`;
+    const latest=(state.reviews||[]).at(-1);
+    body.innerHTML=`<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${esc(state.used)}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${esc(state.available)}</div></div></div><h3 style="margin-top:20px">${esc(s.name)}</h3><p class="muted">${esc(s.cedula)} · ${esc(s.career||'')}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${esc(id)}">+ Agregar revisión</button>${latest?`<button class="btn btn-outline" data-restore-review="${esc(latest.id)}" data-student-id="${esc(id)}">Restaurar última revisión</button>`:''}</div><div class="small muted">Agregar aumenta el cupo total. Restaurar marca la última revisión completada como no consumida, sin borrar el historial.</div>`;
     window.Revisor.modal('student-modal');
   }
 
@@ -57,10 +58,14 @@
       return;
     }
 
-    const restore=event.target.closest('[data-restore-attempt]');
+    const restore=event.target.closest('[data-restore-review]');
     if(restore){
-      event.preventDefault();event.stopImmediatePropagation();const s=findStudent(restore.dataset.restoreAttempt);if(!s)return;
-      try{const state=await window.Revisor.api(`/admin/students/${s.cedula}/grant`,{method:'POST',body:JSON.stringify({count:1})});saveRemoteStudentState(s.cedula,state);window.Revisor.toast('Intento restaurado.','success');await showStudentManager(s.id)}catch(err){window.Revisor.toast(err.message,'danger')}
+      event.preventDefault();event.stopImmediatePropagation();const s=findStudent(restore.dataset.studentId);if(!s)return;
+      try{
+        await window.Revisor.api(`/admin/reviews/${encodeURIComponent(restore.dataset.restoreReview)}/restore`,{method:'POST'});
+        const state=await window.Revisor.api(`/students/${s.cedula}/state`);saveRemoteStudentState(s.cedula,state);
+        window.Revisor.toast('Intento restaurado sobre la última revisión.','success');await showStudentManager(s.id);
+      }catch(err){window.Revisor.toast(err.message,'danger')}
       return;
     }
   },true);

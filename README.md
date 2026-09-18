@@ -1,117 +1,136 @@
 # Revisor-Articulos
 
-Sistema web institucional para la revisión de **artículos académicos** de ITSQMET.
+Sistema web institucional para revisión académica de artículos de titulación.
 
-## Enlaces de GitHub Pages
+## Producción
 
-Una vez finalice el workflow **Deploy GitHub Pages**:
-
+- Portal: `https://jeffer91.github.io/Revisor-Articulos/`
 - Administrador: `https://jeffer91.github.io/Revisor-Articulos/administrador/`
 - Estudiante: `https://jeffer91.github.io/Revisor-Articulos/estudiante/`
-- Portal: `https://jeffer91.github.io/Revisor-Articulos/`
+- Investigación: `https://jeffer91.github.io/Revisor-Articulos/investigacion/`
+- API: `https://revisor-articulos-api-v3.onrender.com`
 
-## Estado actual
+El frontend se publica en GitHub Pages. El backend Node.js se ejecuta en Render y persiste configuración, trabajos, revisiones e intentos en PostgreSQL.
 
-La interfaz completa está implementada y es navegable. Mientras `assets/config.js` no tenga un `API_BASE_URL`, los dos portales muestran un **modo demostración** para probar flujos, tablas, modales, carga de archivos, resultados y comparación de revisiones.
+## Motor académico V4
 
-Las credenciales reales, PIN del administrador, cédulas de estudiantes y claves de IA **no se guardan en GitHub Pages**. La validación y la orquestación de modelos deben ejecutarse en Firebase Functions/Cloud Run u otro backend seguro.
+La nota se calcula sobre 100 mediante 47 microcriterios y cinco niveles proporcionales:
 
-## Reglas funcionales implementadas
+- Cumple = 100 % del peso.
+- Parcial alto = 75 %.
+- Parcial = 50 %.
+- Parcial bajo = 25 %.
+- No cumple = 0 %.
 
-- Dos portales independientes: Administrador y Estudiante.
-- Administrador: acceso por usuario + PIN mediante backend seguro.
-- Estudiante: acceso por cédula consultada en Firebase mediante backend.
-- 3 revisiones iniciales por estudiante; el administrador puede restaurar o agregar intentos.
-- Cada revisión ejecuta evaluación académica, referencias, similitud y posible uso de IA.
-- Mínimo 3 y máximo 5 IA **exitosas** por revisión.
-- Si una IA falla, se intenta la siguiente según prioridad.
-- Si no se alcanzan 3 IA exitosas, la revisión queda incompleta y no consume intento.
-- Las observaciones se consolidan por coincidencia/consenso.
-- El estudiante ve cuántas IA participaron, pero no sus nombres.
-- La nota académica, similitud y posible uso de IA son resultados independientes.
-- Nota académica sobre 100; aprobación desde 70.
-- La evaluación usa 12 áreas que suman 100 puntos, con criterios proporcionales al nivel de un artículo académico de titulación.
-- ORCID y año/volumen provisional de la revista no se penalizan.
-- Las referencias deben verificarse como reales y respaldar la afirmación; se priorizan los últimos 5 años salvo clásicos indispensables.
+Los 12 criterios son:
 
-## Rúbrica base de 100 puntos
-
-| Área | Puntos |
+| Criterio | Puntos |
 |---|---:|
-| Título y delimitación | 4 |
-| Resumen, Abstract y palabras clave | 6 |
-| Introducción, antecedentes y problema | 10 |
-| Objetivos y coherencia | 6 |
-| Metodología | 16 |
-| Resultados | 12 |
-| Discusión | 8 |
-| Conclusiones y recomendaciones | 6 |
-| Referencias | 7 |
-| Redacción y coherencia global | 5 |
-| Formato institucional ÉLITE | 20 |
+| Coherencia título–problema–pregunta–objetivos | 8 |
+| Problema y justificación | 6 |
+| Fundamentación teórica y antecedentes | 8 |
+| Diseño metodológico | 10 |
+| Instrumentos y rigor de la obtención de información | 8 |
+| Población, muestra y recopilación | 7 |
+| Procesamiento y análisis de datos | 8 |
+| Resultados | 15 |
+| Discusión académica | 10 |
+| Conclusiones | 8 |
+| Aporte, utilidad y propuesta | 6 |
+| Calidad académica formal | 6 |
 | **Total** | **100** |
 
-Una condición crítica solo debe bloquear la aprobación cuando exista evidencia clara y una segunda IA independiente la confirme. Las insuficiencias de detalle se califican proporcionalmente y no deben tratarse como críticas por sí solas.
+La aprobación académica ordinaria se calcula desde 70/100. Una condición crítica solo puede bloquear la aprobación cuando una segunda IA independiente, de otra familia de modelo, la confirma.
 
-## API esperada
+## Orquestación resiliente
 
-Configurar `assets/config.js` con la URL del backend:
+La revisión necesita tres carriles académicos completos:
 
-```js
-window.REVISOR_CONFIG = {
-  API_BASE_URL: "https://...",
-  DEMO_MODE: false,
-  INSTITUTION: "ITSQMET",
-  APP_NAME: "Revisión Académica"
-};
-```
+1. Problema y fundamentación.
+2. Metodología y análisis.
+3. Resultados y cierre.
 
-Endpoints mínimos usados por el frontend:
+El sistema selecciona revisores por especialidad, prioridad, historial real de éxito, latencia y fallos recientes. Si un proveedor tarda, puede iniciar un revisor alternativo. La llamada perdedora se cancela cuando otro revisor completa primero. Si faltan proveedores independientes, existe reutilización controlada y respaldo final.
 
-```text
-POST /auth/admin
-  body: { usuario, pin }
-  resp: { token }
+Los estados operativos son: Operativa, Degradada, En espera, Error de configuración e Inactiva. `Procesando` y las cancelaciones por hedging no cuentan como fallos del proveedor.
 
-POST /auth/student
-  body: { cedula }
-  resp: { token, student }
+## Comentarios
 
-POST /reviews
-  multipart/form-data: file
-  resp: { id }
+La calificación siempre considera los 47 microcriterios, pero el informe visible no genera un comentario por cada descuento.
 
-GET /reviews/:id/status
-  resp: { status: queued|running|complete|incomplete|failed, step }
-
-GET /reviews/:id
-  resp: revisión consolidada
-
-GET/POST/PUT /admin/models
-POST /admin/models/:id/test
-```
+- Máximo 2 propuestas por carril y 5 comentarios prioritarios finales.
+- Problemas con la misma causa raíz se consolidan.
+- Los comentarios se ordenan por página.
+- En PDF, el backend vuelve a localizar el fragmento citado dentro de los marcadores `[Página N]`.
+- Si un supuesto “Texto observado” no puede verificarse contra el texto extraído, no se presenta como cita literal.
+- DOCX no conserva paginación física fiable; en esos casos puede mostrarse ubicación no determinada.
 
 ## Seguridad
 
-No colocar en archivos públicos:
+Las claves de IA, el hash administrativo, el secreto de sesiones y la configuración usada por el backend no se guardan en el frontend público.
 
-- usuario/PIN real del administrador,
-- claves Gemini/OpenRouter/Groq,
-- secretos de Firebase Admin,
-- tokens privados,
-- bases completas de cédulas.
+El backend emite sesiones HMAC separadas para:
 
-GitHub Pages debe actuar únicamente como frontend. Las claves y llamadas a IA deben residir en el backend.
+- Administrador.
+- Estudiante.
+- Investigación.
 
-## Catálogo inicial de IA
+Los estudiantes se validan desde el backend contra el registro institucional antes de obtener un token. Las rutas de estado, revisión y resultado verifican la sesión y la propiedad del trabajo.
 
-El Administrador inicia con el catálogo base definido en `backend/catalog.js` y permite agregar más modelos sin cambiar la arquitectura. Cada modelo tiene prioridad, peso, estado, especialidad, endpoint, timeout, temperatura, tokens máximos y prompt específico. El peso inicial es 1 para todos.
+Los intentos estudiantiles se reservan de forma atómica en PostgreSQL para impedir revisiones simultáneas que excedan el cupo. También existe limitación temporal de inicios de revisión.
 
+El portal Investigación exige autenticación y no consume la cuota de un estudiante.
 
-## Disponibilidad resiliente de IA
+## Similitud y posible IA
 
-El motor V4 requiere **3 carriles académicos completos**, no necesariamente 3 proveedores distintos. Primero intenta revisores independientes por especialidad; si un proveedor tarda, activa un segundo revisor en paralelo; después utiliza reemplazos independientes, reutilización controlada y, si existe uno configurado, un modelo marcado como **Respaldo estable**.
+El valor de similitud actual es un **indicador orientativo generado por los modelos**. No equivale a un informe de Turnitin, iThenticate u otro servicio externo de antiplagio y no debe interpretarse como porcentaje probado de plagio.
 
-Los proveedores tienen estados operativos derivados de su comportamiento real: **Operativa**, **Degradada**, **En espera**, **Error de configuración** e **Inactiva**. Saturaciones y timeouts abren temporalmente un circuit breaker para evitar repetir llamadas que probablemente volverán a fallar. Errores permanentes de credenciales excluyen el modelo hasta que se corrija y una prueba manual exitosa lo rehabilite.
+La estimación de posible uso de IA también es orientativa y no constituye prueba concluyente.
 
-La aplicación conserva métricas de éxito, fallos, saturaciones y latencia media para ajustar la prioridad efectiva junto con la prioridad manual y la especialidad del modelo. Las alertas críticas siempre necesitan una segunda IA independiente; si no se consigue, quedan pendientes y no bloquean automáticamente la aprobación.
+La verificación externa de DOI, Crossref/OpenAlex y un motor especializado de similitud son integraciones futuras separadas del motor académico.
+
+## Archivos
+
+El navegador extrae texto de PDF y DOCX antes de enviarlo al backend.
+
+- PDF conserva marcadores de página para ubicar comentarios.
+- DOCX se procesa como texto continuo.
+- Máximo de interfaz: 25 MB.
+- Máximo de PDF: 100 páginas.
+- PDF escaneado sin texto seleccionable requiere OCR y actualmente puede rechazarse.
+- La revisión no inspecciona de forma fiable tipografía, márgenes, diagramación o contenido puramente visual.
+
+## Administrador
+
+El panel obtiene del backend:
+
+- modelos y estado operativo;
+- métricas reales de éxito y latencia;
+- trabajos de revisión centralizados;
+- resultados e historial;
+- alertas críticas derivadas de revisiones reales.
+
+Las estadísticas de frecuencia se calculan desde las observaciones almacenadas; no utilizan valores demo fijos.
+
+“Agregar revisión” aumenta el cupo total de un estudiante. “Restaurar última revisión” marca una revisión completada como no consumida sin borrar su historial.
+
+## Desarrollo
+
+Backend:
+
+```bash
+cd backend
+npm ci
+npm test
+npm start
+```
+
+Node está fijado a la rama 24.x. El workflow `Backend checks` ejecuta pruebas de integridad sobre la rúbrica, microcriterios, autenticación y reserva de intentos.
+
+## Despliegue
+
+GitHub Pages y Render siguen la rama `main`. Para cambios grandes se recomienda validar primero en una rama de trabajo y mover `main` solo después de pasar las comprobaciones.
+
+## Pendientes de infraestructura
+
+La aplicación todavía depende de una única instancia web y de la disponibilidad de proveedores externos de IA. Para uso institucional de alta concurrencia conviene evolucionar a una cola/worker persistente y a infraestructura de base de datos sin vencimiento temporal ni dependencia de plan gratuito.

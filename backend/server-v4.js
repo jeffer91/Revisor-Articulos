@@ -7,18 +7,94 @@ const hybrid=require('./hybrid');
 
 const PORT=Number(process.env.PORT||10000);
 const ALLOWED_ORIGINS=(process.env.ALLOWED_ORIGINS||'https://jeffer91.github.io,http://localhost:8080,http://127.0.0.1:8080').split(',').map(x=>x.trim()).filter(Boolean);
-const ADMIN_LOGIN_HASH=process.env.ADMIN_LOGIN_HASH||'c0d8715a560af5e884b31c8957f8618ef12c2959476f7423e2dbf338872caf9b';
-const SESSION_SECRET=process.env.SESSION_SECRET||ADMIN_LOGIN_HASH;
-const loginAttempts=new Map();
+const ADMIN_LOGIN_HASH=String(process.env.ADMIN_LOGIN_HASH||'').trim();
+const SESSION_SECRET=String(process.env.SESSION_SECRET||'').trim();
+const RESEARCH_LOGIN_HASH=String(process.env.RESEARCH_LOGIN_HASH||ADMIN_LOGIN_HASH).trim();
+const FIREBASE_API_KEY=String(process.env.FIREBASE_API_KEY||'').trim();
+const FIREBASE_PROJECT_ID=String(process.env.FIREBASE_PROJECT_ID||'').trim();
+const FIREBASE_DATABASE_ID=String(process.env.FIREBASE_DATABASE_ID||'(default)').trim();
+const FIREBASE_STUDENT_COLLECTION=String(process.env.FIREBASE_STUDENT_COLLECTION||'Estudiante').trim();
+if(!ADMIN_LOGIN_HASH)throw new Error('ADMIN_LOGIN_HASH no configurado.');
+if(!SESSION_SECRET||SESSION_SECRET.length<32)throw new Error('SESSION_SECRET no configurado o demasiado corto.');
+const loginAttempts=new Map(),requestWindows=new Map();
 
 const sha256=v=>crypto.createHash('sha256').update(v).digest('hex');
 const json=(res,status,data,origin='')=>{const h={'Content-Type':'application/json; charset=utf-8','Vary':'Origin'};if(origin&&ALLOWED_ORIGINS.includes(origin))h['Access-Control-Allow-Origin']=origin;res.writeHead(status,h);res.end(JSON.stringify(data))};
 function cors(req,res){const origin=String(req.headers.origin||'');if(origin&&ALLOWED_ORIGINS.includes(origin)){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,OPTIONS')}return origin}
 function readJson(req,limit=3_000_000){return new Promise((resolve,reject)=>{let body='';req.on('data',c=>{body+=c;if(body.length>limit){reject(Object.assign(new Error('Solicitud demasiado grande.'),{status:413}));req.destroy()}});req.on('end',()=>{if(!body)return resolve({});try{resolve(JSON.parse(body))}catch{reject(Object.assign(new Error('JSON inválido.'),{status:400}))}});req.on('error',reject)})}
 
-function signAdminSession(){const payload=Buffer.from(JSON.stringify({type:'admin',exp:Date.now()+8*60*60*1000})).toString('base64url'),sig=crypto.createHmac('sha256',SESSION_SECRET).update(payload).digest('base64url');return `${payload}.${sig}`}
-function verifyAdminSession(token){try{const [payload,sig]=String(token||'').split('.');if(!payload||!sig)return false;const expected=crypto.createHmac('sha256',SESSION_SECRET).update(payload).digest('base64url');if(sig.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return false;const data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));return data.type==='admin'&&Number(data.exp)>Date.now()}catch{return false}}
-function requireAdmin(req,res,origin){const a=String(req.headers.authorization||''),token=a.startsWith('Bearer ')?a.slice(7):'';if(!verifyAdminSession(token)){json(res,401,{message:'Sesión administrativa no válida.'},origin);return false}return true}
+function signSession(type,sub='',ttlMs=8*60*60*1000){
+  const payload=Buffer.from(JSON.stringify({type,sub:String(sub||''),exp:Date.now()+ttlMs})).toString('base64url');
+  const sig=crypto.createHmac('sha256',SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifySession(token,types=[]){
+  try{
+    const [payload,sig]=String(token||'').split('.');if(!payload||!sig)return null;
+    const expected=crypto.createHmac('sha256',SESSION_SECRET).update(payload).digest('base64url');
+    if(sig.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null;
+    const data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+    if(Number(data.exp)<=Date.now())return null;
+    if(types.length&&!types.includes(data.type))return null;
+    return data;
+  }catch{return null}
+}
+function bearer(req){const a=String(req.headers.authorization||'');return a.startsWith('Bearer ')?a.slice(7):''}
+function clientIp(req){return String(req.headers['x-forwarded-for']||'').split(',')[0].trim()||clientIp(req)}
+function requireAdmin(req,res,origin){
+  const session=verifySession(bearer(req),['admin']);
+  if(!session){json(res,401,{message:'Sesión administrativa no válida.'},origin);return null}
+  return session;
+}
+function allowRequest(key,limit,windowMs){
+  const now=Date.now(),rec=requestWindows.get(key);
+  if(!rec||rec.until<=now){requestWindows.set(key,{count:1,until:now+windowMs});return true}
+  if(rec.count>=limit)return false;
+  rec.count++;return true;
+}
+function safeHashMatch(hash,expected){
+  const a=Buffer.from(String(hash||'')),b=Buffer.from(String(expected||''));
+  return a.length===b.length&&a.length>0&&crypto.timingSafeEqual(a,b);
+}
+function firestoreValue(value){
+  if(!value||typeof value!=='object')return null;
+  if('stringValue'in value)return value.stringValue;
+  if('booleanValue'in value)return value.booleanValue;
+  if('integerValue'in value)return Number(value.integerValue);
+  if('doubleValue'in value)return Number(value.doubleValue);
+  if('timestampValue'in value)return value.timestampValue;
+  if('nullValue'in value)return null;
+  if('arrayValue'in value)return (value.arrayValue.values||[]).map(firestoreValue);
+  if('mapValue'in value)return Object.fromEntries(Object.entries(value.mapValue.fields||{}).map(([k,v])=>[k,firestoreValue(v)]));
+  return null;
+}
+async function firebaseStudent(cedula){
+  if(!FIREBASE_API_KEY||!FIREBASE_PROJECT_ID)throw Object.assign(new Error('Validación institucional no configurada.'),{status:503});
+  const database=encodeURIComponent(FIREBASE_DATABASE_ID),collection=encodeURIComponent(FIREBASE_STUDENT_COLLECTION),id=encodeURIComponent(cedula);
+  const url=`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_PROJECT_ID)}/databases/${database}/documents/${collection}/${id}?key=${encodeURIComponent(FIREBASE_API_KEY)}`;
+  const response=await fetch(url,{headers:{Accept:'application/json'}});
+  if(response.status===404)return null;
+  if(!response.ok)throw Object.assign(new Error('No fue posible validar el registro institucional.'),{status:503});
+  const doc=await response.json(),data={};
+  for(const [k,v] of Object.entries(doc?.fields||{}))data[k]=firestoreValue(v);
+  if(data.eliminado===true)return null;
+  return {
+    cedula,
+    id:cedula,
+    nombres:String(data.nombres||'Estudiante'),
+    nombreCarreraActual:String(data.nombreCarreraActual||''),
+    codigoCarreraActual:String(data.codigoCarreraActual||''),
+    sede:String(data.sede||''),
+    firebaseDocumentId:cedula
+  };
+}
+function canAccessJob(session,job){
+  if(!session||!job)return false;
+  if(session.type==='admin')return true;
+  if(session.type==='student')return String(job.cedula)===String(session.sub);
+  if(session.type==='research')return /^99\d{8}$/.test(String(job.cedula||''));
+  return false;
+}
 
 function publicResult(result){
   if(!result||typeof result!=='object')return result;
@@ -38,19 +114,24 @@ async function setProvider(job,model,status,message='',latencyMs=null,lane=null)
   await store.persistJob(job);
 }
 
-async function attemptProvider(job,model,clean,failures,lane,automatic){
+async function attemptProvider(job,model,clean,failures,lane,automatic,signal=null){
   const started=Date.now();await setProvider(job,model,'Procesando',`Carril: ${lane.label}`,null,lane);
   try{
     const article=hybrid.articleForLane(clean,model,lane),prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic);
     const runtimeModel={...model,timeout:Math.min(Math.max(Number(model.timeout)||90,105),140)};
-    const result=await ai.callModel(runtimeModel,prompt);
+    const result=await ai.callModel(runtimeModel,prompt,signal);
     hybrid.validateLaneResponse(result,lane);
     const latency=Date.now()-started;
     await setProvider(job,model,'Correcta',`Carril: ${lane.label}`,latency,lane);
     console.log(`[review ${job.id}] ${model.provider}/${model.name} [${lane.id}]: OK ${latency}ms`);
     return {ok:true,model,result,lane,latencyMs:latency};
   }catch(err){
-    const latency=Date.now()-started,message=String(err?.message||err),status=ai.classifyFailure(message);
+    const latency=Date.now()-started,message=String(err?.message||err);
+    if(signal?.aborted){
+      await setProvider(job,model,'Cancelada',`Carril: ${lane.label} · cancelada porque otro revisor completó primero`,latency,lane);
+      return {ok:false,cancelled:true,model,lane,status:'Cancelada',message,latencyMs:latency};
+    }
+    const status=ai.classifyFailure(message);
     failures.push({model:model.name,provider:model.provider,lane:lane.label,status,message});job.failures=failures;
     await setProvider(job,model,status,`Carril: ${lane.label} · ${message}`,latency,lane);
     console.warn(`[review ${job.id}] ${model.provider}/${model.name} [${lane.id}]: ${status} - ${message}`);
@@ -72,7 +153,7 @@ function modelLaneScore(model,lane){
   }else if(lane.id==='results-closure'){
     if(/contraste|respaldo/.test(role))score-=58; else if(/redacci/.test(role))score-=52; else if(/cr[ií]tico/.test(role))score-=34; else if(/general|coher|formato/.test(role))score-=24; else if(/metodolog|estad[ií]st/.test(role))score+=12;
   }
-  const rate=Number(model.successRate);if(Number.isFinite(rate))score+=(100-rate)*0.55;
+  if(model.successRate!==null&&model.successRate!==undefined&&model.successRate!==''){const rate=Number(model.successRate);if(Number.isFinite(rate))score+=(100-rate)*0.55;}
   const latency=Number(model.averageLatencyMs||0);if(latency>0)score+=Math.min(35,latency/1800);
   score+=Math.min(45,Number(model.consecutiveFailures||0)*15);
   if(store.operationalState(model)==='Degradada')score+=28;
@@ -86,10 +167,11 @@ function rankedForLane(candidates,lane,{stable=false}={}){
 async function runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,attempted){
   if(!primary)return null;
   attempted.add(primary.id);
-  const p1=attemptProvider(job,primary,clean,failures,lane,automatic);
+  const c1=new AbortController(),c2=new AbortController();
+  const p1=attemptProvider(job,primary,clean,failures,lane,automatic,c1.signal);
   if(!hedge){const r=await p1;return r.ok?r:null;}
   let p2=null,started=false;
-  const startHedge=()=>{if(started)return p2;started=true;attempted.add(hedge.id);p2=attemptProvider(job,hedge,clean,failures,lane,automatic);return p2;};
+  const startHedge=()=>{if(started)return p2;started=true;attempted.add(hedge.id);p2=attemptProvider(job,hedge,clean,failures,lane,automatic,c2.signal);return p2;};
   const first=await Promise.race([p1.then(r=>({kind:'primary',r})),sleep(HEDGE_DELAY_MS).then(()=>({kind:'timer'}))]);
   if(first.kind==='primary'){
     if(first.r.ok)return first.r;
@@ -98,7 +180,10 @@ async function runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,att
   job.message=`El carril "${lane.label}" está tardando más de lo esperado. Se activó un revisor alternativo.`;await store.persistJob(job);
   const second=startHedge();
   const winner=await Promise.race([p1.then(r=>({which:1,r})),second.then(r=>({which:2,r}))]);
-  if(winner.r.ok)return winner.r;
+  if(winner.r.ok){
+    if(winner.which===1)c2.abort(new Error('hedge_lost'));else c1.abort(new Error('hedge_lost'));
+    return winner.r;
+  }
   const other=winner.which===1?await second:await p1;
   return other.ok?other:null;
 }
@@ -194,7 +279,8 @@ async function runReview(job,articleText){
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Procesando',message:'Verificando solo alertas críticas con una segunda IA independiente.',updatedAt:new Date().toISOString()};await store.persistJob(job);
     const criticalCandidates=hybrid.getCriticalCandidates(successes,automatic);
     const verifierPool=(await store.loadModels()).filter(store.isModelSelectable);
-    const criticalConfirmations=criticalCandidates.length?await hybrid.verifyCriticalCandidates(successes,verifierPool,clean,automatic):[];
+    const criticalHealth=async(model,status,message,latencyMs)=>setProvider(job,model,status,message,latencyMs,{label:'Confirmación crítica'});
+    const criticalConfirmations=criticalCandidates.length?await hybrid.verifyCriticalCandidates(successes,verifierPool,clean,automatic,criticalHealth):[];
     const confirmed=criticalConfirmations.filter(x=>x.confirmed).length,pending=criticalConfirmations.filter(x=>x.pending).length;
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Correcta',message:criticalCandidates.length?`${criticalCandidates.length} alerta(s) candidata(s); ${confirmed} confirmada(s) y ${pending} pendiente(s).`:'Sin alertas críticas candidatas.',updatedAt:new Date().toISOString()};
     job.step=7;job.message=pending?'Existen alertas críticas pendientes de confirmación independiente; no bloquearán automáticamente la aprobación.':'Confirmación crítica finalizada.';await store.persistJob(job);
@@ -212,22 +298,43 @@ const server=http.createServer(async(req,res)=>{
   try{
     if(req.method==='GET'&&url.pathname==='/health'){const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),ready=active.filter(store.isModelSelectable);return json(res,200,{ok:true,service:'Revisor Artículos API',engine:'hybrid-v4-resilient',database:true,models:models.length,active:active.length,ready:ready.length,providers:[...new Set(models.map(m=>m.provider))],time:new Date().toISOString()},origin)}
 
+    if(req.method==='POST'&&url.pathname==='/student/login'){
+      const ip=clientIp(req);
+      if(!allowRequest(`student-login:${ip}`,15,10*60*1000))return json(res,429,{message:'Demasiados intentos de acceso. Intenta más tarde.'},origin);
+      const body=await readJson(req),cedula=String(body.cedula||'').trim();
+      if(!/^\d{10}$/.test(cedula))return json(res,400,{message:'Cédula inválida.'},origin);
+      const student=await firebaseStudent(cedula);
+      if(!student)return json(res,404,{message:'Estudiante no registrado.'},origin);
+      await store.upsertStudentProfile(student);
+      return json(res,200,{token:signSession('student',cedula,8*60*60*1000),expiresIn:28800,student},origin);
+    }
+
+    if(req.method==='POST'&&url.pathname==='/research/login'){
+      const body=await readJson(req),ip=clientIp(req);
+      if(!allowRequest(`research-login:${ip}`,10,10*60*1000))return json(res,429,{message:'Demasiados intentos. Intenta más tarde.'},origin);
+      const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);
+      if(!safeHashMatch(hash,RESEARCH_LOGIN_HASH))return json(res,401,{message:'Usuario o PIN incorrectos.'},origin);
+      return json(res,200,{token:signSession('research','research',8*60*60*1000),expiresIn:28800},origin);
+    }
+
     if(req.method==='POST'&&url.pathname==='/admin/login'){
-      const body=await readJson(req),ip=req.socket.remoteAddress||'unknown',now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
+      const body=await readJson(req),ip=clientIp(req),now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
       if(rec.until>now)return json(res,429,{message:'Demasiados intentos. Intenta nuevamente en unos minutos.'},origin);
-      const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);if(hash!==ADMIN_LOGIN_HASH){rec.count++;if(rec.count>=7){rec.until=now+600000;rec.count=0}loginAttempts.set(ip,rec);return json(res,401,{message:'Usuario o PIN incorrectos.'},origin)}
-      loginAttempts.delete(ip);return json(res,200,{token:signAdminSession(),expiresIn:28800},origin);
+      const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);if(!safeHashMatch(hash,ADMIN_LOGIN_HASH)){rec.count++;if(rec.count>=7){rec.until=now+600000;rec.count=0}loginAttempts.set(ip,rec);return json(res,401,{message:'Usuario o PIN incorrectos.'},origin)}
+      loginAttempts.delete(ip);return json(res,200,{token:signSession('admin','admin',8*60*60*1000),expiresIn:28800},origin);
     }
 
     if(url.pathname.startsWith('/admin/')){
       if(!requireAdmin(req,res,origin))return;
       if(req.method==='GET'&&url.pathname==='/admin/models')return json(res,200,(await store.loadModels()).map(store.cleanModel),origin);
       if(req.method==='GET'&&url.pathname==='/admin/jobs')return json(res,200,await store.listJobs(),origin);
+      if(req.method==='GET'&&url.pathname==='/admin/students')return json(res,200,await store.listStudentProfiles(),origin);
       if(req.method==='POST'&&url.pathname==='/admin/models/sync'){
         const body=await readJson(req),incoming=Array.isArray(body.models)?body.models:[],current=await store.loadModels();
         for(const item of incoming){const old=current.find(x=>x.id===item.id)||DEFAULT_MODELS.find(x=>x.id===item.id)||{};await store.saveModelConfig({...old,...item,id:item.id},'')}
         return json(res,200,(await store.loadModels()).map(store.cleanModel),origin);
       }
+      const lookup=url.pathname.match(/^\/admin\/students\/(\d{10})\/lookup$/);if(req.method==='GET'&&lookup){const student=await firebaseStudent(lookup[1]);if(!student)return json(res,404,{message:'Estudiante no registrado.'},origin);await store.upsertStudentProfile(student);return json(res,200,student,origin)}
       const grant=url.pathname.match(/^\/admin\/students\/(\d{10})\/grant$/);if(req.method==='POST'&&grant){const body=await readJson(req);return json(res,200,await store.grantAttempts(grant[1],body.count),origin)}
       const restore=url.pathname.match(/^\/admin\/reviews\/([0-9a-f-]+)\/restore$/i);if(req.method==='POST'&&restore){await store.restoreAttempt(restore[1]);return json(res,200,{ok:true},origin)}
       const match=url.pathname.match(/^\/admin\/models\/([^/]+)(\/test)?$/);
@@ -243,17 +350,46 @@ const server=http.createServer(async(req,res)=>{
       return json(res,404,{message:'Ruta administrativa no encontrada.'},origin);
     }
 
-    const state=url.pathname.match(/^\/students\/(\d{10})\/state$/);if(req.method==='GET'&&state)return json(res,200,publicStudentState(await store.getStudentState(state[1])),origin);
-
-    if(req.method==='POST'&&url.pathname==='/reviews'){
-      const body=await readJson(req,3_000_000),cedula=String(body.cedula||'').trim(),fileName=String(body.fileName||'articulo').slice(0,180),articleText=String(body.articleText||'');
-      if(!/^\d{10}$/.test(cedula))return json(res,400,{message:'Cédula inválida.'},origin);if(articleText.length<700)return json(res,400,{message:'No se pudo extraer suficiente texto del artículo.'},origin);
-      const student=await store.getStudentState(cedula);if(student.available<=0)return json(res,403,{message:'No tienes revisiones disponibles.'},origin);
-      const id=crypto.randomUUID(),job={id,cedula,file:fileName,status:'processing',step:1,reviewers:0,message:'',failures:[],providerStatuses:{},result:null,consumesAttempt:false};await store.createJob(job);runReview(job,articleText).catch(err=>console.error('runReview:',err));return json(res,202,{id,status:'processing'},origin);
+    const state=url.pathname.match(/^\/students\/(\d{10})\/state$/);
+    if(req.method==='GET'&&state){
+      const session=verifySession(bearer(req),['student','admin']);
+      if(!session||(session.type==='student'&&session.sub!==state[1]))return json(res,401,{message:'Sesión de estudiante no válida.'},origin);
+      return json(res,200,publicStudentState(await store.getStudentState(state[1])),origin);
     }
 
-    const status=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/status$/i);if(req.method==='GET'&&status){const job=await store.getJob(status[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);return json(res,200,{id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||''},origin)}
-    const result=url.pathname.match(/^\/reviews\/([0-9a-f-]+)$/i);if(req.method==='GET'&&result){const job=await store.getJob(result[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);if(job.status!=='complete')return json(res,409,{message:'La revisión todavía no está completa.',status:job.status},origin);return json(res,200,publicResult(job.result),origin)}
+    if(req.method==='POST'&&url.pathname==='/reviews'){
+      const session=verifySession(bearer(req),['student','research']);
+      if(!session)return json(res,401,{message:'Debes iniciar sesión antes de revisar un artículo.'},origin);
+      const ip=clientIp(req);
+      if(!allowRequest(`review-start:${session.type}:${session.sub}:${ip}`,8,60*60*1000))return json(res,429,{message:'Se alcanzó el límite temporal de inicios de revisión. Intenta más tarde.'},origin);
+      const body=await readJson(req,3_000_000),fileName=String(body.fileName||'articulo').slice(0,180),articleText=String(body.articleText||'');
+      if(articleText.length<700)return json(res,400,{message:'No se pudo extraer suficiente texto del artículo.'},origin);
+      const cedula=session.type==='student'?String(session.sub):`99${String(crypto.randomInt(0,100000000)).padStart(8,'0')}`;
+      if(session.type==='student'&&body.cedula&&String(body.cedula).trim()!==cedula)return json(res,403,{message:'La cédula no corresponde a la sesión activa.'},origin);
+      const id=crypto.randomUUID(),job={id,cedula,file:fileName,status:'processing',step:1,reviewers:0,message:'',failures:[],providerStatuses:{},result:null,consumesAttempt:false};
+      if(session.type==='student'){
+        const reserved=await store.reserveStudentJob(job);
+        if(!reserved.ok)return json(res,403,{message:reserved.processing>0?'Ya existe una revisión en proceso o no tienes intentos disponibles.':'No tienes revisiones disponibles.'},origin);
+      }else await store.createJob(job);
+      runReview(job,articleText).catch(err=>console.error('runReview:',err));
+      return json(res,202,{id,status:'processing'},origin);
+    }
+
+    const status=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/status$/i);
+    if(req.method==='GET'&&status){
+      const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
+      const job=await store.getJob(status[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
+      if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
+      return json(res,200,{id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||''},origin);
+    }
+    const result=url.pathname.match(/^\/reviews\/([0-9a-f-]+)$/i);
+    if(req.method==='GET'&&result){
+      const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
+      const job=await store.getJob(result[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
+      if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
+      if(job.status!=='complete')return json(res,409,{message:'La revisión todavía no está completa.',status:job.status},origin);
+      return json(res,200,publicResult(job.result),origin);
+    }
     return json(res,404,{message:'Ruta no encontrada.'},origin);
   }catch(err){console.error(err);return json(res,err.status||500,{message:String(err.message||err)},origin)}
 });

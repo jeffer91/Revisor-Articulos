@@ -1,11 +1,12 @@
 (() => {
-  const { $, $$, api, firebaseGetStudent, toast, modal, config } = window.Revisor;
+  const { $, $$, api, esc, toast, modal, config } = window.Revisor;
   const V = window.AdminView;
   const seed = window.ADMIN_DEMO_DATA;
 
   let models = JSON.parse(localStorage.getItem('revisor_models') || 'null') || seed.models;
   let students = JSON.parse(localStorage.getItem('revisor_known_students') || '[]');
   let reviews = [];
+  let centralJobs = null;
   let alerts = JSON.parse(localStorage.getItem('revisor_alerts') || '[]');
 
   const saveModels = () => localStorage.setItem('revisor_models', JSON.stringify(models));
@@ -16,19 +17,29 @@
   const saveState = (cedula, state) => localStorage.setItem(stateKey(cedula), JSON.stringify(state));
 
   function syncReviews() {
+    if (Array.isArray(centralJobs)) {
+      const studentCedulas=[...new Set(centralJobs.filter(j=>!/^99\d{8}$/.test(String(j.cedula||''))).map(j=>j.cedula))];
+      for(const cedula of studentCedulas)if(!students.some(s=>s.cedula===cedula))students.push({id:cedula,cedula,name:'Estudiante',career:'',used:0,available:3,lastReview:'',status:'Activo'});
+      const byCedula=new Map(students.map(s=>[s.cedula,s]));
+      reviews=centralJobs.filter(j=>j.result).map(j=>{
+        const r=j.result||{},research=/^99\d{8}$/.test(String(j.cedula||'')),s=byCedula.get(j.cedula);
+        return {...r,id:j.id,n:j.review_number||r.n||1,file:r.file||j.file_name,date:r.date||j.created_at,student:research?'Investigación':(s?.name||`Estudiante ${j.cedula}`),cedula:research?'—':j.cedula,status:j.status==='complete'?'Completa':j.status==='incomplete'?'Incompleta':j.status==='processing'?'Procesando':'Fallida',reviewers:j.reviewers||r.reviewers||0};
+      });
+      alerts=reviews.flatMap(r=>(r.critical||[]).map(detail=>({type:'Crítica',student:r.student,date:r.date,detail,state:'Pendiente'})));
+      for(const s of students){
+        const own=centralJobs.filter(j=>j.cedula===s.cedula),completed=own.filter(j=>j.status==='complete'&&j.consumes_attempt);
+        const processing=own.filter(j=>j.status==='processing').length,allowed=Number(own[0]?.total_allowed||3);
+        s.used=completed.length;s.available=Math.max(0,allowed-s.used-processing);s.lastReview=completed.at(-1)?.created_at||'';
+      }
+      return;
+    }
     reviews = [];
     students.forEach(s => {
       const st = loadState(s.cedula) || {used:0,available:3,reviews:[]};
       s.used = Number.isFinite(st.used) ? st.used : 0;
       s.available = Number.isFinite(st.available) ? st.available : Math.max(0, 3 - s.used);
       s.lastReview = st.reviews?.at(-1)?.date || '';
-      (st.reviews || []).forEach(r => reviews.push({
-        ...r,
-        student: s.name,
-        cedula: s.cedula,
-        status: r.status || 'Completa',
-        reviewers: r.reviewers || 0
-      }));
+      (st.reviews || []).forEach(r => reviews.push({...r,student:s.name,cedula:s.cedula,status:r.status||'Completa',reviewers:r.reviewers||0}));
     });
   }
 
@@ -48,36 +59,13 @@
     render();
   };
 
-  const sha256 = async text => {
-    const bytes = new TextEncoder().encode(text);
-    const hash = await crypto.subtle.digest('SHA-256', bytes);
-    return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,'0')).join('');
-  };
-
-  $('#admin-login').addEventListener('submit', async e => {
-    e.preventDefault();
-    const usuario = $('#admin-user').value.trim();
-    const pin = $('#admin-pin').value.trim();
-    $('#admin-login-msg').textContent = 'Validando credenciales…';
-    try {
-      const hash = await sha256(`${usuario}:${pin}`);
-      if (hash !== config.ADMIN_LOGIN_HASH) {
-        $('#admin-login-msg').textContent = 'Usuario o PIN incorrectos.';
-        return;
-      }
-      sessionStorage.setItem('revisor_admin_auth','1');
-      $('#admin-login-msg').textContent = '';
-      showApp();
-    } catch {
-      $('#admin-login-msg').textContent = 'No fue posible validar el acceso.';
-    }
-  });
+  // El acceso se valida exclusivamente en el backend (admin-backend.js).
 
   $('#logout').addEventListener('click', () => {
     sessionStorage.removeItem('revisor_admin_auth');
     location.reload();
   });
-  if (sessionStorage.getItem('revisor_admin_auth') === '1') showApp();
+  if (sessionStorage.getItem('revisor_admin_auth') === '1' && sessionStorage.getItem('revisor_token')) showApp();
 
   const nav = n => {
     $$('.section').forEach(s => s.classList.remove('active'));
@@ -91,7 +79,7 @@
     if (n) { e.preventDefault(); nav(n.dataset.nav); }
   });
 
-  const set = (id,v) => $(id).value = v ?? '';
+  const set = (id,v) => { const el=$(id); if(el) el.value = v ?? ''; };
 
   function compactModelForm() {
     const grid = $('#model-form .form-grid');
@@ -235,14 +223,14 @@
 
   async function testModel(id) {
     const m = models.find(x => x.id === id); if (!m) return;
-    modal('test-modal'); $('#test-result').innerHTML = `<div class="alert alert-info"><strong>Probando ${m.name}…</strong></div>`;
+    modal('test-modal'); $('#test-result').innerHTML = `<div class="alert alert-info"><strong>Probando ${esc(m.name)}…</strong></div>`;
     try {
       const d = config.API_BASE_URL ? await api(`/admin/models/${id}/test`,{method:'POST'}) : await directTestModel(m,id);
       m.lastTest = 'Correcta'; saveModels(); render();
-      $('#test-result').innerHTML = `<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">${d.time || 'OK'}</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">${d.tokens ?? '—'}</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>${d.text || d.response || 'Respuesta recibida correctamente.'}</p></div>`;
+      $('#test-result').innerHTML = `<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">${esc(d.time || 'OK')}</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">${esc(d.tokens ?? '—')}</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>${esc(d.text || d.response || 'Respuesta recibida correctamente.')}</p></div>`;
     } catch(err) {
       m.lastTest = 'Error'; saveModels(); render();
-      $('#test-result').innerHTML = `<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${err.message}</div></div>`;
+      $('#test-result').innerHTML = `<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${esc(err.message)}</div></div>`;
     }
   }
 
@@ -262,21 +250,21 @@
     const q = $('#student-search').value.trim();
     if (!/^\d{10}$/.test(q) || students.some(s => s.cedula === q)) return;
     try {
-      const d = await firebaseGetStudent(q); if (!d) return;
+      const d = await api(`/admin/students/${q}/lookup`); if (!d) return;
       const s = {id:q,cedula:q,name:d.nombres || 'Estudiante',career:d.nombreCarreraActual || '',used:0,available:3,lastReview:'',status:'Activo'};
-      students.push(s); saveStudents(); render(); toast('Estudiante cargado desde Firebase.','success');
+      students.push(s); saveStudents(); render(); toast('Estudiante cargado desde el registro institucional.','success');
     } catch(err) { console.warn(err); }
   }
 
   function manageStudent(id) {
     const s = students.find(x => x.id === id); if (!s) return;
-    $('#student-modal-body').innerHTML = `<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${s.used}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${s.available}</div></div></div><h3 style="margin-top:20px">${s.name}</h3><p class="muted">${s.cedula} · ${s.career}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${id}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${id}">Restaurar intento</button></div><div class="small muted">Restaurar un intento no elimina el historial.</div>`;
+    $('#student-modal-body').innerHTML = `<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${esc(s.used)}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${esc(s.available)}</div></div></div><h3 style="margin-top:20px">${esc(s.name)}</h3><p class="muted">${esc(s.cedula)} · ${esc(s.career)}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${esc(id)}">+ Agregar revisión</button></div><div class="small muted">Los cambios se gestionan centralmente.</div>`;
     modal('student-modal');
   }
 
   function viewReview(id) {
     const r = reviews.find(x => x.id === id); if (!r) return;
-    $('#review-modal-body').innerHTML = `<div class="grid grid-3"><div class="card"><div class="score-big">${r.score ?? '—'}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud</div><div class="metric-value">${r.plagiarism != null ? r.plagiarism+'%' : '—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai != null ? r.ai+'%' : '—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${r.status}</strong><div class="small muted">${r.reviewers} IA exitosas.</div></div></div>`;
+    $('#review-modal-body').innerHTML = `<div class="grid grid-3"><div class="card"><div class="score-big">${esc(r.score ?? '—')}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud orientativa</div><div class="metric-value">${r.plagiarism != null ? esc(r.plagiarism)+'%' : '—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai != null ? esc(r.ai)+'%' : '—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${esc(r.status)}</strong><div class="small muted">${esc(r.reviewers)} carriles completos.</div></div></div>`;
     modal('review-modal');
   }
 
@@ -291,6 +279,17 @@
     const vr=e.target.closest('[data-view-review]'); if(vr) viewReview(vr.dataset.viewReview);
   });
 
+  window.addEventListener('revisor-models-updated',e=>{if(Array.isArray(e.detail)){models=e.detail;saveModels();render();}});
+  window.addEventListener('revisor-jobs-updated',e=>{if(Array.isArray(e.detail)){centralJobs=e.detail;render();}});
+  window.addEventListener('revisor-students-updated',e=>{
+    if(!Array.isArray(e.detail))return;
+    students=e.detail.map(s=>({
+      id:s.cedula,cedula:s.cedula,name:s.name||'Estudiante',career:s.career||'',careerCode:s.career_code||'',campus:s.campus||'',
+      used:Number(s.used)||0,available:Number(s.available)||0,lastReview:s.last_review||'',status:'Activo'
+    }));
+    render();
+  });
+
   $('#model-search').addEventListener('input',render);
   $('#student-search').addEventListener('input',()=>{render();lookupStudent();});
   $('#review-search').addEventListener('input',render);
@@ -298,8 +297,9 @@
   $('#review-status').addEventListener('change',render);
 
   $('#export-summary').addEventListener('click',()=>{
-    const csv=['Estudiante,Cedula,Nota,Plagio,Posible IA,Estado',...reviews.map(r=>`${r.student},${r.cedula},${r.score??''},${r.plagiarism??''},${r.ai??''},${r.status}`)].join('\n');
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='resumen-revisiones.csv';a.click();URL.revokeObjectURL(a.href);
+    const cell=v=>{let s=String(v??'').replace(/"/g,'""');if(/^[=+\-@]/.test(s))s="'"+s;return `"${s}"`};
+    const csv=['Estudiante,Cedula,Nota,Similitud orientativa,Posible IA,Estado',...reviews.map(r=>[r.student,r.cedula,r.score??'',r.plagiarism??'',r.ai??'',r.status].map(cell).join(','))].join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='resumen-revisiones.csv';a.click();URL.revokeObjectURL(a.href);
   });
 
   const initial=(location.hash||'#inicio').slice(1);

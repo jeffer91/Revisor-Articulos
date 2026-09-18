@@ -8,61 +8,80 @@
   <link rel="stylesheet" href="../assets/styles.css" />
 </head>
 <body>
-  <div class="brand-strip"></div>
-  <header class="topbar"><div class="topbar-inner">
-    <div class="brand"><img src="../assets/logo.svg" alt="ITSQMET"><div class="brand-text"><strong>Revisión Académica</strong><span>Investigación</span></div></div>
-  </div></header>
-
-  <main class="container">
-    <section id="view-upload" class="section active">
-      <div class="page-title"><div><h1>Revisar artículo</h1><p>Sube un artículo académico para obtener una nota sobre 100 y observaciones de mejora.</p></div></div>
-      <div class="grid grid-2">
-        <div class="card">
-          <div id="dropzone" class="dropzone">
-            <div style="font-size:32px">⇧</div>
-            <h3>Arrastra el artículo aquí</h3>
-            <p>Formatos aceptados: PDF y DOCX.</p>
-            <button class="btn btn-outline" id="choose-file" type="button">Seleccionar archivo</button>
-            <input id="article-file" type="file" accept=".pdf,.docx" class="hidden">
-            <div id="selected-file"></div>
-          </div>
-          <div style="margin-top:16px"><button id="start-review" class="btn btn-primary btn-block" disabled>Iniciar revisión</button></div>
-        </div>
-        <div class="card">
-          <h3>Qué entrega el sistema</h3>
-          <div class="steps">
-            <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Nota académica</strong><span>Evaluación estricta sobre 100 puntos.</span></div></div>
-            <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Desglose por criterios</strong><span>Los 12 parámetros académicos de la rúbrica institucional.</span></div></div>
-            <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Comentarios</strong><span>Errores, explicación y propuesta concreta de corrección.</span></div></div>
-          </div>
-        </div>
-      </div>
+  <div id="research-login-view" class="login-shell">
+    <section class="login-panel">
+      <img class="logo" src="../assets/logo.svg" alt="ITSQMET" />
+      <div class="gold-line"></div>
+      <h1>Investigación</h1>
+      <p>Acceso restringido para revisión técnica de artículos.</p>
+      <form id="research-login" class="grid" autocomplete="off">
+        <div class="field"><label for="research-user">Usuario</label><input id="research-user" class="input" autocomplete="username" required /></div>
+        <div class="field"><label for="research-pin">PIN</label><input id="research-pin" class="input" type="password" inputmode="numeric" autocomplete="current-password" required /></div>
+        <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
+        <div id="research-login-msg" class="small muted"></div>
+      </form>
     </section>
+    <aside class="login-visual"><div class="login-visual-inner"><div class="gold-line"></div><h2>Revisión académica</h2><p>El acceso está protegido y cada trabajo se procesa sin utilizar la cuota de revisiones estudiantiles.</p></div></aside>
+  </div>
 
-    <section id="view-process" class="section">
-      <div class="page-title"><div><h1>Analizando artículo</h1><p>No cierres esta pestaña mientras se completa la revisión.</p></div></div>
-      <div class="card">
-        <div class="progress"><span id="process-progress" style="width:0%"></span></div>
-        <div id="process-text" style="margin-top:18px"><strong>Preparando documento…</strong></div>
-        <div id="process-error" style="margin-top:18px"></div>
-      </div>
-    </section>
+  <div id="research-app" class="hidden">
+    <div class="brand-strip"></div>
+    <header class="topbar"><div class="topbar-inner">
+      <div class="brand"><img src="../assets/logo.svg" alt="ITSQMET"><div class="brand-text"><strong>Revisión Académica</strong><span>Investigación</span></div></div>
+      <div class="user-actions"><button id="research-logout" class="btn btn-outline btn-sm">Salir</button></div>
+    </div></header>
 
-    <section id="view-result" class="section">
-      <div class="page-title"><div><h1>Resultado de la revisión</h1><p id="result-meta"></p></div><button class="btn btn-outline" id="new-review">Revisar otro artículo</button></div>
-      <div id="critical-alerts"></div>
-      <div class="grid grid-2" style="margin-top:18px">
-        <div class="card" id="score-card"></div>
-        <div class="card"><h3>Resumen</h3><div id="result-summary"></div></div>
-      </div>
-      <div class="card" style="margin-top:18px">
+    <main class="container">
+      <section id="view-upload" class="section active">
+        <div class="page-title"><div><h1>Revisar artículo</h1><p>Sube un artículo académico para obtener una nota sobre 100 y comentarios prioritarios de mejora.</p></div></div>
         <div class="grid grid-2">
-          <div><h3>Desglose de 100 puntos</h3><div id="rubric-result"></div></div>
-          <div><h3>Comentarios y correcciones</h3><div id="observations-result"></div></div>
+          <div class="card">
+            <div id="dropzone" class="dropzone">
+              <div style="font-size:32px">⇧</div>
+              <h3>Arrastra el artículo aquí</h3>
+              <p>Formatos aceptados: PDF y DOCX. Máximo 25 MB.</p>
+              <button class="btn btn-outline" id="choose-file" type="button">Seleccionar archivo</button>
+              <input id="article-file" type="file" accept=".pdf,.docx" class="hidden">
+              <div id="selected-file"></div>
+            </div>
+            <div style="margin-top:16px"><button id="start-review" class="btn btn-primary btn-block" disabled>Iniciar revisión</button></div>
+          </div>
+          <div class="card">
+            <h3>Qué entrega el sistema</h3>
+            <div class="steps">
+              <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Nota académica</strong><span>Evaluación proporcional sobre 100 puntos.</span></div></div>
+              <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Desglose por criterios</strong><span>Los 12 criterios académicos de la rúbrica institucional.</span></div></div>
+              <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Comentarios prioritarios</strong><span>Solo los problemas más importantes, ubicados por página cuando el PDF permite verificarla.</span></div></div>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
+
+      <section id="view-process" class="section">
+        <div class="page-title"><div><h1>Analizando artículo</h1><p>No cierres esta pestaña mientras se completa la revisión.</p></div></div>
+        <div class="card">
+          <div class="progress"><span id="process-progress" style="width:0%"></span></div>
+          <div id="process-text" style="margin-top:18px"><strong>Preparando documento…</strong></div>
+          <div id="process-error" style="margin-top:18px"></div>
+        </div>
+      </section>
+
+      <section id="view-result" class="section">
+        <div class="page-title"><div><h1>Resultado de la revisión</h1><p id="result-meta"></p></div><button class="btn btn-outline" id="new-review">Revisar otro artículo</button></div>
+        <div id="critical-alerts"></div>
+        <div class="grid grid-2" style="margin-top:18px">
+          <div class="card" id="score-card"></div>
+          <div class="card"><h3>Resumen</h3><div id="result-summary"></div></div>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <div class="grid grid-2">
+            <div><h3>Desglose de 100 puntos</h3><div id="rubric-result"></div></div>
+            <div><h3>Comentarios prioritarios</h3><div id="observations-result"></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
