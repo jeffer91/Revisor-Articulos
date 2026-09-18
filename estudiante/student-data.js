@@ -2,17 +2,17 @@ window.STUDENT_DEMO_DATA = (() => {
   const rubric=[
     ['Coherencia título–problema–pregunta–objetivos',8,0],
     ['Problema y justificación',6,0],
-    ['Fundamentación teórica y antecedentes',10,0],
-    ['Diseño metodológico',15,0],
-    ['Instrumentos y rigor de la obtención de información',12,0],
-    ['Población, muestra y recopilación',8,0],
-    ['Procesamiento y análisis de datos',10,0],
-    ['Resultados',10,0],
-    ['Discusión académica',8,0],
-    ['Conclusiones',6,0],
-    ['Aporte, utilidad y propuesta',4,0],
-    ['Calidad académica formal',3,0]
-  ];
+    ['Fundamentación teórica y antecedentes',8,0],
+    ['Diseño metodológico',10,0],
+    ['Instrumentos y rigor de la obtención de información',8,0],
+    ['Población, muestra y recopilación',7,0],
+    ['Procesamiento y análisis de datos',8,0],
+    ['Resultados',15,0],
+    ['Discusión académica',10,0],
+    ['Conclusiones',8,0],
+    ['Aporte, utilidad y propuesta',6,0],
+    ['Calidad académica formal',6,0]
+  ]
   const observations=[];
   const reviews=[];
   const student={id:'',name:'',cedula:'',career:'',used:0,available:3,reviews};
