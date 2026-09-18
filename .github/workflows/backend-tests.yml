@@ -19,10 +19,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: backend/package.json
       - name: Install backend
         working-directory: backend
-        run: npm ci
+        run: npm install
       - name: Run smoke tests
         working-directory: backend
         run: npm test
