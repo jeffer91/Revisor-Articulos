@@ -124,7 +124,7 @@
 
     const main = document.createElement('div');
     main.className = 'model-main-fields';
-    ['#model-name','#model-provider','#model-model','#model-endpoint','#model-key','#model-priority','#model-state','#model-review-type'].forEach(id => {
+    ['#model-name','#model-provider','#model-model','#model-endpoint','#model-key','#model-priority','#model-state','#model-stable-backup','#model-review-type'].forEach(id => {
       const el = field(id); if (el) main.appendChild(el);
     });
 
@@ -138,7 +138,7 @@
     grid.replaceChildren(main, details);
 
     const header = $('#section-ias table thead tr');
-    if (header) header.innerHTML = '<th>IA</th><th>Prioridad</th><th>Función</th><th>Estado</th><th>Prueba</th><th>Acciones</th>';
+    if (header) header.innerHTML = '<th>IA</th><th>Prioridad</th><th>Función</th><th>Estado</th><th>Operación</th><th>Prueba manual</th><th>Último uso</th><th>Éxito / latencia</th><th>Acciones</th>';
 
     if (!$('#model-compact-style')) {
       const style = document.createElement('style');
@@ -174,7 +174,7 @@
     set('#model-id',m?.id); set('#model-name',m?.name); set('#model-provider',m?.provider);
     set('#model-model',m?.model); set('#model-endpoint',m?.endpoint); set('#model-key','');
     set('#model-priority',m?.priority || models.length+1); set('#model-weight',m?.weight ?? 1);
-    set('#model-state',m?.state || 'Activa'); set('#model-specialty',m?.specialty);
+    set('#model-state',m?.state || 'Activa'); set('#model-stable-backup',String(!!m?.stableBackup)); set('#model-specialty',m?.specialty);
     set('#model-timeout',m?.timeout || 90); set('#model-temperature',m?.temperature ?? .2);
     set('#model-tokens',m?.tokens || 6000); set('#model-review-type',m?.reviewType || 'General');
     set('#model-prompt',m?.prompt);
@@ -191,7 +191,7 @@
       name: $('#model-name').value.trim(), provider: $('#model-provider').value.trim(),
       model: $('#model-model').value.trim(), endpoint: $('#model-endpoint').value.trim(),
       priority: +$('#model-priority').value, weight: +$('#model-weight').value,
-      state: $('#model-state').value, specialty: $('#model-specialty').value.trim(),
+      state: $('#model-state').value, stableBackup: $('#model-stable-backup').value==='true', specialty: $('#model-specialty').value.trim(),
       timeout: +$('#model-timeout').value, temperature: +$('#model-temperature').value,
       tokens: +$('#model-tokens').value, reviewType: $('#model-review-type').value,
       prompt: $('#model-prompt').value, lastTest: old?.lastTest || 'Sin probar'
@@ -246,6 +246,18 @@
     }
   }
 
+  async function toggleModel(id) {
+    const m=models.find(x=>x.id===id);if(!m)return;
+    const next=m.state==='Activa'?'Inactiva':'Activa';
+    try{
+      if(config.API_BASE_URL){
+        const saved=await api(`/admin/models/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({state:next})});
+        Object.assign(m,saved||{state:next});
+      }else m.state=next;
+      saveModels();render();
+    }catch(err){toast(`No fue posible cambiar el estado: ${err.message}`,'danger')}
+  }
+
   async function lookupStudent() {
     const q = $('#student-search').value.trim();
     if (!/^\d{10}$/.test(q) || students.some(s => s.cedula === q)) return;
@@ -272,7 +284,7 @@
     if (e.target.closest('#add-model-btn')) openModel();
     const edit=e.target.closest('[data-edit-model]'); if(edit) openModel(models.find(m=>m.id===edit.dataset.editModel));
     const test=e.target.closest('[data-test-model]'); if(test) testModel(test.dataset.testModel);
-    const tog=e.target.closest('[data-toggle-model]'); if(tog){const m=models.find(x=>x.id===tog.dataset.toggleModel);m.state=m.state==='Activa'?'Inactiva':'Activa';saveModels();render();}
+    const tog=e.target.closest('[data-toggle-model]'); if(tog) toggleModel(tog.dataset.toggleModel);
     const mg=e.target.closest('[data-manage-student]'); if(mg) manageStudent(mg.dataset.manageStudent);
     const add=e.target.closest('[data-add-attempt]'); if(add){const s=students.find(x=>x.id===add.dataset.addAttempt);const st=loadState(s.cedula)||{used:0,available:3,reviews:[]};st.available=(st.available ?? 3)+1;saveState(s.cedula,st);render();manageStudent(s.id);toast('Revisión adicional asignada.','success');}
     const rs=e.target.closest('[data-restore-attempt]'); if(rs){const s=students.find(x=>x.id===rs.dataset.restoreAttempt);const st=loadState(s.cedula)||{used:0,available:3,reviews:[]};if(st.used>0)st.used--;st.available=(st.available ?? 3)+1;saveState(s.cedula,st);render();manageStudent(s.id);toast('Intento restaurado.','success');}
