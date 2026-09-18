@@ -106,3 +106,12 @@ GitHub Pages debe actuar únicamente como frontend. Las claves y llamadas a IA d
 ## Catálogo inicial de IA
 
 El Administrador inicia con el catálogo base definido en `backend/catalog.js` y permite agregar más modelos sin cambiar la arquitectura. Cada modelo tiene prioridad, peso, estado, especialidad, endpoint, timeout, temperatura, tokens máximos y prompt específico. El peso inicial es 1 para todos.
+
+
+## Disponibilidad resiliente de IA
+
+El motor V4 requiere **3 carriles académicos completos**, no necesariamente 3 proveedores distintos. Primero intenta revisores independientes por especialidad; si un proveedor tarda, activa un segundo revisor en paralelo; después utiliza reemplazos independientes, reutilización controlada y, si existe uno configurado, un modelo marcado como **Respaldo estable**.
+
+Los proveedores tienen estados operativos derivados de su comportamiento real: **Operativa**, **Degradada**, **En espera**, **Error de configuración** e **Inactiva**. Saturaciones y timeouts abren temporalmente un circuit breaker para evitar repetir llamadas que probablemente volverán a fallar. Errores permanentes de credenciales excluyen el modelo hasta que se corrija y una prueba manual exitosa lo rehabilite.
+
+La aplicación conserva métricas de éxito, fallos, saturaciones y latencia media para ajustar la prioridad efectiva junto con la prioridad manual y la especialidad del modelo. Las alertas críticas siempre necesitan una segunda IA independiente; si no se consigue, quedan pendientes y no bloquean automáticamente la aprobación.
