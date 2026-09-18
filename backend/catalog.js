@@ -1,17 +1,17 @@
 const RUBRIC = [
   ['Coherencia título–problema–pregunta–objetivos',8],
   ['Problema y justificación',6],
-  ['Fundamentación teórica y antecedentes',10],
-  ['Diseño metodológico',15],
-  ['Instrumentos y rigor de la obtención de información',12],
-  ['Población, muestra y recopilación',8],
-  ['Procesamiento y análisis de datos',10],
-  ['Resultados',10],
-  ['Discusión académica',8],
-  ['Conclusiones',6],
-  ['Aporte, utilidad y propuesta',4],
-  ['Calidad académica formal',3]
-];
+  ['Fundamentación teórica y antecedentes',8],
+  ['Diseño metodológico',10],
+  ['Instrumentos y rigor de la obtención de información',8],
+  ['Población, muestra y recopilación',7],
+  ['Procesamiento y análisis de datos',8],
+  ['Resultados',15],
+  ['Discusión académica',10],
+  ['Conclusiones',8],
+  ['Aporte, utilidad y propuesta',6],
+  ['Calidad académica formal',6]
+]
 
 // Los IDs son estables para no perder las API keys ya guardadas.
 // La prioridad se ajusta según el comportamiento observado en revisiones reales.
