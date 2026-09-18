@@ -221,14 +221,14 @@
 
   async function testModel(id) {
     const m = models.find(x => x.id === id); if (!m) return;
-    modal('test-modal'); $('#test-result').innerHTML = `<div class="alert alert-info"><strong>Probando ${m.name}…</strong></div>`;
+    modal('test-modal'); $('#test-result').innerHTML = `<div class="alert alert-info"><strong>Probando ${esc(m.name)}…</strong></div>`;
     try {
       const d = config.API_BASE_URL ? await api(`/admin/models/${id}/test`,{method:'POST'}) : await directTestModel(m,id);
       m.lastTest = 'Correcta'; saveModels(); render();
-      $('#test-result').innerHTML = `<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">${d.time || 'OK'}</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">${d.tokens ?? '—'}</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>${d.text || d.response || 'Respuesta recibida correctamente.'}</p></div>`;
+      $('#test-result').innerHTML = `<div class="alert alert-success"><strong>IA operativa</strong></div><div class="grid grid-3"><div class="card metric"><div class="metric-label">Tiempo</div><div class="metric-value">${esc(d.time || 'OK')}</div></div><div class="card metric"><div class="metric-label">Tokens</div><div class="metric-value">${esc(d.tokens ?? '—')}</div></div><div class="card metric"><div class="metric-label">Estado</div><div class="metric-value text-success">OK</div></div></div><div class="card"><h3>Mini revisión</h3><p>${esc(d.text || d.response || 'Respuesta recibida correctamente.')}</p></div>`;
     } catch(err) {
       m.lastTest = 'Error'; saveModels(); render();
-      $('#test-result').innerHTML = `<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${err.message}</div></div>`;
+      $('#test-result').innerHTML = `<div class="alert alert-danger"><strong>Error de prueba</strong><div class="small">${esc(err.message)}</div></div>`;
     }
   }
 
@@ -256,13 +256,13 @@
 
   function manageStudent(id) {
     const s = students.find(x => x.id === id); if (!s) return;
-    $('#student-modal-body').innerHTML = `<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${s.used}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${s.available}</div></div></div><h3 style="margin-top:20px">${s.name}</h3><p class="muted">${s.cedula} · ${s.career}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${id}">+ Agregar revisión</button><button class="btn btn-outline" data-restore-attempt="${id}">Restaurar intento</button></div><div class="small muted">Restaurar un intento no elimina el historial.</div>`;
+    $('#student-modal-body').innerHTML = `<div class="grid grid-2"><div class="card metric"><div class="metric-label">Usadas</div><div class="metric-value">${esc(s.used)}</div></div><div class="card metric"><div class="metric-label">Disponibles</div><div class="metric-value">${esc(s.available)}</div></div></div><h3 style="margin-top:20px">${esc(s.name)}</h3><p class="muted">${esc(s.cedula)} · ${esc(s.career)}</p><div class="toolbar"><button class="btn btn-primary" data-add-attempt="${esc(id)}">+ Agregar revisión</button></div><div class="small muted">Los cambios se gestionan centralmente.</div>`;
     modal('student-modal');
   }
 
   function viewReview(id) {
     const r = reviews.find(x => x.id === id); if (!r) return;
-    $('#review-modal-body').innerHTML = `<div class="grid grid-3"><div class="card"><div class="score-big">${r.score ?? '—'}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud</div><div class="metric-value">${r.plagiarism != null ? r.plagiarism+'%' : '—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai != null ? r.ai+'%' : '—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${r.status}</strong><div class="small muted">${r.reviewers} carriles completos.</div></div></div>`;
+    $('#review-modal-body').innerHTML = `<div class="grid grid-3"><div class="card"><div class="score-big">${esc(r.score ?? '—')}</div><div class="score-caption">Nota académica / 100</div></div><div class="card metric"><div class="metric-label">Similitud orientativa</div><div class="metric-value">${r.plagiarism != null ? esc(r.plagiarism)+'%' : '—'}</div></div><div class="card metric"><div class="metric-label">Posible IA</div><div class="metric-value">${r.ai != null ? esc(r.ai)+'%' : '—'}</div></div></div><div style="margin-top:18px" class="alert ${r.status==='Completa'?'alert-success':'alert-warning'}"><div><strong>${esc(r.status)}</strong><div class="small muted">${esc(r.reviewers)} carriles completos.</div></div></div>`;
     modal('review-modal');
   }
 
