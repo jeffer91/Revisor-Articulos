@@ -258,9 +258,12 @@ async function getStudentState(cedula){
 async function grantAttempts(cedula,count=1){ count=Math.max(1,Math.min(20,Number(count)||1)); await pool.query(`INSERT INTO student_limits(cedula,total_allowed) VALUES($1,3+$2) ON CONFLICT(cedula) DO UPDATE SET total_allowed=student_limits.total_allowed+$2,updated_at=NOW()`,[cedula,count]); return getStudentState(cedula); }
 async function restoreAttempt(jobId){ await pool.query(`UPDATE review_jobs SET consumes_attempt=FALSE,updated_at=NOW() WHERE id=$1`,[jobId]); }
 async function listJobs(){ const {rows}=await pool.query(`
-  SELECT id,cedula,file_name,status,step,reviewers,message,failures,provider_statuses,result,consumes_attempt,created_at,updated_at,
-         ROW_NUMBER() OVER (PARTITION BY cedula ORDER BY created_at ASC)::int AS review_number
-  FROM review_jobs ORDER BY created_at DESC LIMIT 300
+  SELECT r.id,r.cedula,r.file_name,r.status,r.step,r.reviewers,r.message,r.failures,r.provider_statuses,r.result,r.consumes_attempt,r.created_at,r.updated_at,
+         COALESCE(sl.total_allowed,3)::int AS total_allowed,
+         ROW_NUMBER() OVER (PARTITION BY r.cedula ORDER BY r.created_at ASC)::int AS review_number
+  FROM review_jobs r
+  LEFT JOIN student_limits sl ON sl.cedula=r.cedula
+  ORDER BY r.created_at DESC LIMIT 300
 `); return rows; }
 
 module.exports={pool,initDb,loadModels,resolveKey,cloudflareAccountId,configurationProblem,permanentConfigurationError,operationalState,isModelSelectable,cleanModel,saveModelConfig,updateModelTest,updateModelReviewHealth,createJob,reserveStudentJob,persistJob,getJob,getStudentState,grantAttempts,restoreAttempt,listJobs};
