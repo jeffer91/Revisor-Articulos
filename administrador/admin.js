@@ -18,10 +18,12 @@
 
   function syncReviews() {
     if (Array.isArray(centralJobs)) {
+      const studentCedulas=[...new Set(centralJobs.filter(j=>!/^99\d{8}$/.test(String(j.cedula||''))).map(j=>j.cedula))];
+      for(const cedula of studentCedulas)if(!students.some(s=>s.cedula===cedula))students.push({id:cedula,cedula,name:'Estudiante',career:'',used:0,available:3,lastReview:'',status:'Activo'});
       const byCedula=new Map(students.map(s=>[s.cedula,s]));
       reviews=centralJobs.filter(j=>j.result).map(j=>{
-        const r=j.result||{},s=byCedula.get(j.cedula);
-        return {...r,id:j.id,file:r.file||j.file_name,date:r.date||j.created_at,student:s?.name||`Estudiante ${j.cedula}`,cedula:j.cedula,status:j.status==='complete'?'Completa':j.status==='incomplete'?'Incompleta':j.status==='processing'?'Procesando':'Fallida',reviewers:j.reviewers||r.reviewers||0};
+        const r=j.result||{},research=/^99\d{8}$/.test(String(j.cedula||'')),s=byCedula.get(j.cedula);
+        return {...r,id:j.id,n:j.review_number||r.n||1,file:r.file||j.file_name,date:r.date||j.created_at,student:research?'Investigación':(s?.name||`Estudiante ${j.cedula}`),cedula:research?'—':j.cedula,status:j.status==='complete'?'Completa':j.status==='incomplete'?'Incompleta':j.status==='processing'?'Procesando':'Fallida',reviewers:j.reviewers||r.reviewers||0};
       });
       alerts=reviews.flatMap(r=>(r.critical||[]).map(detail=>({type:'Crítica',student:r.student,date:r.date,detail,state:'Pendiente'})));
       for(const s of students){
