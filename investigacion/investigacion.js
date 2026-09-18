@@ -1,5 +1,5 @@
 (() => {
-  const { api } = window.Revisor;
+  const { api, esc } = window.Revisor;
   const $ = s => document.querySelector(s);
   let file = null;
 
@@ -8,26 +8,52 @@
     $(id)?.classList.add('active');
     window.scrollTo({top:0,behavior:'smooth'});
   };
+  const showApp=()=>{
+    $('#research-login-view')?.classList.add('hidden');
+    $('#research-app')?.classList.remove('hidden');
+    show('#view-upload');
+  };
+  const logout=()=>{
+    sessionStorage.removeItem('revisor_research_token');
+    location.reload();
+  };
+
+  $('#research-login')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const usuario=$('#research-user')?.value.trim()||'',pin=$('#research-pin')?.value.trim()||'',msg=$('#research-login-msg');
+    if(msg)msg.textContent='Validando acceso…';
+    try{
+      const auth=await api('/research/login',{method:'POST',body:JSON.stringify({usuario,pin})});
+      if(!auth?.token)throw new Error('No fue posible crear la sesión.');
+      sessionStorage.setItem('revisor_research_token',auth.token);
+      if(msg)msg.textContent='';
+      showApp();
+    }catch(err){if(msg)msg.textContent=err.message||'No fue posible validar el acceso.'}
+  });
+  $('#research-logout')?.addEventListener('click',logout);
+  if(sessionStorage.getItem('revisor_research_token'))showApp();
 
   const setFile = f => {
     if(!f)return;
     if(!/\.(pdf|docx)$/i.test(f.name)){alert('Solo se aceptan archivos PDF o DOCX.');return;}
+    if(f.size>25*1024*1024){alert('El archivo supera el límite de 25 MB.');return;}
     file=f;
-    $('#selected-file').innerHTML=`<div class="file-chip"><div style="font-size:24px">▤</div><div class="grow"><strong>${f.name}</strong><span>${(f.size/1024/1024).toFixed(2)} MB</span></div></div>`;
+    $('#selected-file').innerHTML=`<div class="file-chip"><div style="font-size:24px">▤</div><div class="grow"><strong>${esc(f.name)}</strong><span>${(f.size/1024/1024).toFixed(2)} MB</span></div></div>`;
     $('#start-review').disabled=false;
   };
 
-  $('#choose-file').addEventListener('click',()=>$('#article-file').click());
-  $('#article-file').addEventListener('change',e=>setFile(e.target.files[0]));
-  $('#dropzone').addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag')});
-  $('#dropzone').addEventListener('dragleave',e=>e.currentTarget.classList.remove('drag'));
-  $('#dropzone').addEventListener('drop',e=>{e.preventDefault();e.currentTarget.classList.remove('drag');setFile(e.dataTransfer.files[0])});
+  $('#choose-file')?.addEventListener('click',()=>$('#article-file').click());
+  $('#article-file')?.addEventListener('change',e=>setFile(e.target.files[0]));
+  $('#dropzone')?.addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag')});
+  $('#dropzone')?.addEventListener('dragleave',e=>e.currentTarget.classList.remove('drag'));
+  $('#dropzone')?.addEventListener('drop',e=>{e.preventDefault();e.currentTarget.classList.remove('drag');setFile(e.dataTransfer.files[0])});
 
   async function extractPdf(f){
     if(!window.pdfjsLib)throw new Error('No se pudo cargar el lector PDF.');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const data=new Uint8Array(await f.arrayBuffer());
     const pdf=await window.pdfjsLib.getDocument({data}).promise;
+    if(pdf.numPages>100)throw new Error('El PDF supera el límite de 100 páginas.');
     const pages=[];
     for(let i=1;i<=pdf.numPages;i++){
       const page=await pdf.getPage(i),content=await page.getTextContent();
@@ -44,15 +70,14 @@
   }
 
   const extractText=f=>/\.pdf$/i.test(f.name)?extractPdf(f):extractDocx(f);
-  const technicalId=()=>`99${String(Math.floor(Math.random()*100000000)).padStart(8,'0')}`;
 
   function renderResult(r){
     $('#result-meta').textContent=`${r.file} · ${new Date(r.date).toLocaleString('es-EC')}`;
-    $('#score-card').innerHTML=`<div class="score-big">${r.score}</div><div class="score-caption">Nota académica / 100</div><div style="margin-top:10px"><span class="badge ${r.approved?'badge-success':'badge-danger'}">${r.approved?'APROBADO':'NO APROBADO'}</span></div>`;
-    $('#result-summary').innerHTML=`<p><strong>Revisores exitosos:</strong> ${r.reviewers}</p><p><strong>Observaciones:</strong> ${(r.observations||[]).length}</p>${r.approvalBlocked?'<div class="alert alert-danger"><div>!</div><div><strong>Condición crítica</strong><div class="small">Existe una condición académica crítica que impide la aprobación hasta corregirse.</div></div></div>':''}`;
-    $('#critical-alerts').innerHTML=(r.critical||[]).map(x=>`<div class="alert alert-danger" style="margin-bottom:10px"><div>!</div><div><strong>Alerta crítica</strong><div class="small">${x}</div></div></div>`).join('');
-    $('#rubric-result').innerHTML=(r.categories||[]).map(([n,m,s])=>`<div style="margin:13px 0"><div style="display:flex;justify-content:space-between;gap:15px"><strong>${n}</strong><span>${s} / ${m}</span></div><div class="progress" style="margin-top:7px"><span style="width:${Math.min(100,(Number(s)||0)/(Number(m)||1)*100)}%"></span></div></div>`).join('');
-    $('#observations-result').innerHTML=(r.observations||[]).map(o=>`<div class="accordion-item open"><div class="accordion-head"><span class="badge ${o.severity==='Crítico'?'badge-danger':o.severity==='Alto'?'badge-warning':'badge-info'}">${o.severity}</span><div class="grow"><strong>${o.page||'Ubicación no determinada'} · ${o.section}</strong><div class="small muted">${o.title}</div></div></div><div class="accordion-body"><dl>${o.original?`<dt>Texto observado</dt><dd>${o.original}</dd>`:''}<dt>Problema</dt><dd>${o.problem||''}</dd><dt>Corrección</dt><dd>${o.fix||''}</dd></dl></div></div>`).join('') || '<p class="muted">Sin observaciones relevantes.</p>';
+    $('#score-card').innerHTML=`<div class="score-big">${esc(r.score)}</div><div class="score-caption">Nota académica / 100</div><div style="margin-top:10px"><span class="badge ${r.approved?'badge-success':'badge-danger'}">${r.approved?'APROBADO':'NO APROBADO'}</span></div>`;
+    $('#result-summary').innerHTML=`<p><strong>Carriles completos:</strong> ${esc(r.reviewers)}</p><p><strong>Comentarios prioritarios:</strong> ${esc((r.observations||[]).length)}</p>${r.approvalBlocked?'<div class="alert alert-danger"><div>!</div><div><strong>Condición crítica</strong><div class="small">Existe una condición académica crítica confirmada que impide la aprobación hasta corregirse.</div></div></div>':''}`;
+    $('#critical-alerts').innerHTML=(r.critical||[]).map(x=>`<div class="alert alert-danger" style="margin-bottom:10px"><div>!</div><div><strong>Alerta crítica</strong><div class="small">${esc(x)}</div></div></div>`).join('');
+    $('#rubric-result').innerHTML=(r.categories||[]).map(([n,m,s])=>`<div style="margin:13px 0"><div style="display:flex;justify-content:space-between;gap:15px"><strong>${esc(n)}</strong><span>${esc(s)} / ${esc(m)}</span></div><div class="progress" style="margin-top:7px"><span style="width:${Math.min(100,(Number(s)||0)/(Number(m)||1)*100)}%"></span></div></div>`).join('');
+    $('#observations-result').innerHTML=(r.observations||[]).map(o=>`<div class="accordion-item open"><div class="accordion-head"><span class="badge ${o.severity==='Crítico'?'badge-danger':o.severity==='Alto'?'badge-warning':'badge-info'}">${esc(o.severity)}</span><div class="grow"><strong>${esc(o.page||'Ubicación no determinada')} · ${esc(o.section)}</strong><div class="small muted">${esc(o.title)}</div></div></div><div class="accordion-body"><dl>${o.original?`<dt>Texto observado</dt><dd>${esc(o.original)}</dd>`:''}<dt>Problema</dt><dd>${esc(o.problem||'')}</dd><dt>Corrección</dt><dd>${esc(o.fix||'')}</dd></dl></div></div>`).join('') || '<p class="muted">Sin observaciones prioritarias.</p>';
     show('#view-result');
   }
 
@@ -65,18 +90,22 @@
     try{
       const articleText=await extractText(file);
       if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
+      if(articleText.length>2500000)throw new Error('El documento extraído es demasiado extenso para una revisión segura.');
       $('#process-progress').style.width='18%';
       $('#process-text').innerHTML='<strong>Iniciando evaluación académica…</strong>';
-      const start=await api('/reviews',{method:'POST',body:JSON.stringify({cedula:technicalId(),fileName:file.name,articleText})});
-      const deadline=Date.now()+10*60*1000;
+      const start=await api('/reviews',{method:'POST',body:JSON.stringify({fileName:file.name,articleText})});
+      const deadline=Date.now()+20*60*1000;
       let status;
       do{
-        if(Date.now()>deadline)throw new Error('La revisión superó el tiempo máximo de espera.');
+        if(Date.now()>deadline){
+          $('#process-error').innerHTML='<div class="alert alert-warning"><div>!</div><div><strong>La revisión continúa en el servidor</strong><div class="small">No inicies otra revisión mientras este trabajo siga activo. Vuelve a esta sección más tarde.</div></div></div>';
+          return;
+        }
         await new Promise(r=>setTimeout(r,1800));
         status=await api(`/reviews/${start.id}/status`);
         const pct=Math.min(92,18+(Number(status.step||1)/8)*74);
         $('#process-progress').style.width=`${pct}%`;
-        $('#process-text').innerHTML='<strong>Analizando criterios y consolidando observaciones…</strong>';
+        $('#process-text').innerHTML=`<strong>${esc(status.message||'Analizando criterios y consolidando observaciones…')}</strong>`;
       }while(!['complete','incomplete','failed'].includes(status.status));
       if(status.status!=='complete')throw new Error(status.message||'No fue posible completar la revisión.');
       const result=await api(`/reviews/${start.id}`);
@@ -84,13 +113,14 @@
       renderResult(result);
     }catch(err){
       console.error(err);
-      $('#process-error').innerHTML=`<div class="alert alert-danger"><div>!</div><div><strong>No fue posible completar la revisión</strong><div class="small">${err.message||'Ocurrió un error técnico.'}</div><div style="margin-top:12px"><button class="btn btn-outline btn-sm" id="retry">Volver</button></div></div></div>`;
+      if(/sesión|session|401/i.test(String(err.message||'')))sessionStorage.removeItem('revisor_research_token');
+      $('#process-error').innerHTML=`<div class="alert alert-danger"><div>!</div><div><strong>No fue posible completar la revisión</strong><div class="small">${esc(err.message||'Ocurrió un error técnico.')}</div><div style="margin-top:12px"><button class="btn btn-outline btn-sm" id="retry">Volver</button></div></div></div>`;
       $('#retry')?.addEventListener('click',()=>show('#view-upload'));
     }
   }
 
-  $('#start-review').addEventListener('click',startReview);
-  $('#new-review').addEventListener('click',()=>{
+  $('#start-review')?.addEventListener('click',startReview);
+  $('#new-review')?.addEventListener('click',()=>{
     file=null;$('#selected-file').innerHTML='';$('#article-file').value='';$('#start-review').disabled=true;show('#view-upload');
   });
 })();
