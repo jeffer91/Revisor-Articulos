@@ -39,7 +39,7 @@ async function attemptProvider(job,model,clean,successes,failures,lane,automatic
   const started=Date.now();await setProvider(job,model,'Procesando',`Carril: ${lane.label}`,null,lane);
   try{
     const article=hybrid.articleForLane(clean,model,lane),prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic);
-    const runtimeModel={...model,timeout:Math.min(Number(model.timeout)||90,70)};
+    const runtimeModel={...model,timeout:Math.min(Math.max(Number(model.timeout)||90,105),140)};
     const result=await ai.callModel(runtimeModel,prompt);
     hybrid.validateLaneResponse(result,lane);
     const latency=Date.now()-started;
@@ -52,6 +52,42 @@ async function attemptProvider(job,model,clean,successes,failures,lane,automatic
     await setProvider(job,model,status,`Carril: ${lane.label} · ${message}`,latency,lane);
     console.warn(`[review ${job.id}] ${model.provider}/${model.name} [${lane.id}]: ${status} - ${message}`);return false;
   }
+}
+
+function modelLaneScore(model,lane){
+  const role=String(model.reviewType||model.specialty||'').toLowerCase();
+  const status=String(model.lastReviewStatus||'').toLowerCase();
+  const msg=String(model.lastReviewMessage||'').toLowerCase();
+  let score=Number(model.priority)||50;
+
+  if(lane.id==='problem-foundation'){
+    if(/coher|formato/.test(role))score-=40;
+    else if(/general/.test(role))score-=22;
+    else if(/redacci|contraste/.test(role))score-=12;
+    else if(/metodolog|estad[ií]st|razonamiento/.test(role))score+=12;
+  }else if(lane.id==='methodology-analysis'){
+    if(/metodolog/.test(role))score-=45;
+    else if(/estad[ií]st|razonamiento/.test(role))score-=32;
+    else if(/general|cr[ií]tico/.test(role))score-=14;
+    else if(/redacci|formato/.test(role))score+=10;
+  }else if(lane.id==='results-closure'){
+    if(/contraste|respaldo/.test(role))score-=42;
+    else if(/redacci/.test(role))score-=38;
+    else if(/cr[ií]tico/.test(role))score-=24;
+    else if(/general|coher|formato/.test(role))score-=15;
+    else if(/metodolog|estad[ií]st/.test(role))score+=8;
+  }
+
+  if(status.includes('correct'))score-=18;
+  else if(status.includes('satur'))score+=18;
+  else if(status.includes('error'))score+=28;
+
+  if(/wrong api key|user not found|unauthorized|invalid api key|authentication/.test(msg))score+=1000;
+  return score;
+}
+
+function rankedForLane(candidates,lane){
+  return [...candidates].sort((a,b)=>modelLaneScore(a,lane)-modelLaneScore(b,lane));
 }
 
 async function runReview(job,articleText){
@@ -71,19 +107,47 @@ async function runReview(job,articleText){
     job.failures=failures;await store.persistJob(job);
     if(candidates.length<3){job.status='incomplete';job.step=6;job.message=`Solo hay ${candidates.length} proveedores configurados y disponibles. Se requieren al menos 3. Tu intento no fue descontado.`;await store.persistJob(job);return}
 
-    const lanes=hybrid.REVIEW_LANES,used=new Set();let cursor=0;const initial=[];
-    for(const lane of lanes){const model=candidates[cursor++];if(!model)break;used.add(model.id);initial.push(attemptProvider(job,model,clean,successes,failures,lane,automatic))}
+    const lanes=hybrid.REVIEW_LANES;
+    const attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()]));
+    const successfulModelIds=new Set();
+    const reservedInitial=new Set();
+    const initial=[];
+
+    // Primera ronda: asigna cada carril al modelo más apropiado, no simplemente al siguiente por prioridad.
+    // Esto evita desperdiciar Groq (metodología) en fundamentación y deja revisores de cierre disponibles.
+    for(const lane of lanes){
+      const model=rankedForLane(candidates,lane).find(m=>!reservedInitial.has(m.id));
+      if(!model)continue;
+      reservedInitial.add(model.id);
+      attemptedByLane.get(lane.id).add(model.id);
+      initial.push(attemptProvider(job,model,clean,successes,failures,lane,automatic));
+    }
     await Promise.all(initial);
+    successes.forEach(x=>successfulModelIds.add(x.model.id));
 
     let unresolved=lanes.filter(lane=>!successes.some(s=>s.lane.id===lane.id));
-    while(unresolved.length&&cursor<candidates.length){
-      const batch=[];
-      for(const lane of unresolved){while(cursor<candidates.length&&used.has(candidates[cursor].id))cursor++;const model=candidates[cursor++];if(!model)break;used.add(model.id);batch.push(attemptProvider(job,model,clean,successes,failures,lane,automatic))}
-      if(!batch.length)break;await Promise.all(batch);unresolved=lanes.filter(lane=>!successes.some(s=>s.lane.id===lane.id));
+    while(unresolved.length){
+      const batch=[],reservedBatch=new Set();
+      for(const lane of unresolved){
+        const attempted=attemptedByLane.get(lane.id);
+        const model=rankedForLane(candidates,lane).find(m=>
+          !successfulModelIds.has(m.id) &&
+          !reservedBatch.has(m.id) &&
+          !attempted.has(m.id)
+        );
+        if(!model)continue;
+        attempted.add(model.id);
+        reservedBatch.add(model.id);
+        batch.push({lane,model,promise:attemptProvider(job,model,clean,successes,failures,lane,automatic)});
+      }
+      if(!batch.length)break;
+      await Promise.all(batch.map(x=>x.promise));
+      successes.forEach(x=>successfulModelIds.add(x.model.id));
+      unresolved=lanes.filter(lane=>!successes.some(s=>s.lane.id===lane.id));
     }
 
     job.failures=failures;job.reviewers=successes.length;
-    if(unresolved.length||successes.length<3){job.status='incomplete';job.step=6;job.message=`Solo respondieron ${successes.length} proveedores de forma válida. Se requieren 3 carriles académicos completos. Tu intento no fue descontado.`;await store.persistJob(job);return}
+    if(unresolved.length||successes.length<3){job.status='incomplete';job.step=6;job.message=`Se completaron ${successes.length} de 3 carriles académicos. El sistema agotó los revisores disponibles para los carriles pendientes. Tu intento no fue descontado.`;await store.persistJob(job);return}
 
     job.step=6;job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Procesando',message:'Verificando únicamente las alertas críticas candidatas con una segunda IA independiente.',updatedAt:new Date().toISOString()};await store.persistJob(job);
     const criticalCandidates=hybrid.getCriticalCandidates(successes,automatic);
