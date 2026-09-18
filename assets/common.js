@@ -12,9 +12,9 @@
   const api = async (path, options = {}) => {
     if (!config.API_BASE_URL) throw new Error('BACKEND_NOT_CONFIGURED');
     const adminToken = sessionStorage.getItem('revisor_token');
-    const studentToken = sessionStorage.getItem('revisor_student_token');
+    const userToken = sessionStorage.getItem('revisor_student_token') || sessionStorage.getItem('revisor_research_token');
     const useAdmin = path.startsWith('/admin/') || sessionStorage.getItem('revisor_admin_auth') === '1';
-    const token = useAdmin ? adminToken : studentToken;
+    const token = useAdmin ? adminToken : userToken;
     const headers = new Headers(options.headers || {});
     if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
