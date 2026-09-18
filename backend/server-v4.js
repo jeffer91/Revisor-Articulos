@@ -279,7 +279,8 @@ async function runReview(job,articleText){
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Procesando',message:'Verificando solo alertas críticas con una segunda IA independiente.',updatedAt:new Date().toISOString()};await store.persistJob(job);
     const criticalCandidates=hybrid.getCriticalCandidates(successes,automatic);
     const verifierPool=(await store.loadModels()).filter(store.isModelSelectable);
-    const criticalConfirmations=criticalCandidates.length?await hybrid.verifyCriticalCandidates(successes,verifierPool,clean,automatic):[];
+    const criticalHealth=async(model,status,message,latencyMs)=>setProvider(job,model,status,message,latencyMs,{label:'Confirmación crítica'});
+    const criticalConfirmations=criticalCandidates.length?await hybrid.verifyCriticalCandidates(successes,verifierPool,clean,automatic,criticalHealth):[];
     const confirmed=criticalConfirmations.filter(x=>x.confirmed).length,pending=criticalConfirmations.filter(x=>x.pending).length;
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Correcta',message:criticalCandidates.length?`${criticalCandidates.length} alerta(s) candidata(s); ${confirmed} confirmada(s) y ${pending} pendiente(s).`:'Sin alertas críticas candidatas.',updatedAt:new Date().toISOString()};
     job.step=7;job.message=pending?'Existen alertas críticas pendientes de confirmación independiente; no bloquearán automáticamente la aprobación.':'Confirmación crítica finalizada.';await store.persistJob(job);
