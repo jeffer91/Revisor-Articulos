@@ -30,7 +30,7 @@ Las credenciales reales, PIN del administrador, cédulas de estudiantes y claves
 - El estudiante ve cuántas IA participaron, pero no sus nombres.
 - La nota académica, similitud y posible uso de IA son resultados independientes.
 - Nota académica sobre 100; aprobación desde 70.
-- 80 puntos corresponden a calidad académica y 20 a formato institucional ÉLITE.
+- La evaluación usa 12 áreas que suman 100 puntos, con criterios proporcionales al nivel de un artículo académico de titulación.
 - ORCID y año/volumen provisional de la revista no se penalizan.
 - Las referencias deben verificarse como reales y respaldar la afirmación; se priorizan los últimos 5 años salvo clásicos indispensables.
 
@@ -51,7 +51,7 @@ Las credenciales reales, PIN del administrador, cédulas de estudiantes y claves
 | Formato institucional ÉLITE | 20 |
 | **Total** | **100** |
 
-Un error metodológico grave debe activar alerta crítica y puede limitar la nota máxima según la regla académica configurada. Una referencia falsa/inexistente es una alerta crítica de integridad.
+Una condición crítica solo debe bloquear la aprobación cuando exista evidencia clara y una segunda IA independiente la confirme. Las insuficiencias de detalle se califican proporcionalmente y no deben tratarse como críticas por sí solas.
 
 ## API esperada
 
@@ -105,4 +105,4 @@ GitHub Pages debe actuar únicamente como frontend. Las claves y llamadas a IA d
 
 ## Catálogo inicial de IA
 
-El Administrador inicia con los 26 modelos definidos para el proyecto y permite agregar más sin cambiar el código. Cada modelo tiene prioridad, peso, estado, especialidad, endpoint, timeout, temperatura, tokens máximos y prompt específico. El peso inicial es 1 para todos.
+El Administrador inicia con el catálogo base definido en `backend/catalog.js` y permite agregar más modelos sin cambiar la arquitectura. Cada modelo tiene prioridad, peso, estado, especialidad, endpoint, timeout, temperatura, tokens máximos y prompt específico. El peso inicial es 1 para todos.
