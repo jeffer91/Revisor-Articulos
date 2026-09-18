@@ -281,6 +281,14 @@
 
   window.addEventListener('revisor-models-updated',e=>{if(Array.isArray(e.detail)){models=e.detail;saveModels();render();}});
   window.addEventListener('revisor-jobs-updated',e=>{if(Array.isArray(e.detail)){centralJobs=e.detail;render();}});
+  window.addEventListener('revisor-students-updated',e=>{
+    if(!Array.isArray(e.detail))return;
+    students=e.detail.map(s=>({
+      id:s.cedula,cedula:s.cedula,name:s.name||'Estudiante',career:s.career||'',careerCode:s.career_code||'',campus:s.campus||'',
+      used:Number(s.used)||0,available:Number(s.available)||0,lastReview:s.last_review||'',status:'Activo'
+    }));
+    render();
+  });
 
   $('#model-search').addEventListener('input',render);
   $('#student-search').addEventListener('input',()=>{render();lookupStudent();});
