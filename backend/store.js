@@ -166,6 +166,8 @@ async function updateModelTest(id,status,message=''){
     configuration_error_message=CASE WHEN $2='Correcta' THEN NULL WHEN $4 THEN $3 ELSE configuration_error_message END,
     circuit_open_until=CASE WHEN $2='Correcta' THEN NULL WHEN $5 THEN NOW()+INTERVAL '10 minutes' ELSE circuit_open_until END,
     consecutive_failures=CASE WHEN $2='Correcta' THEN 0 ELSE consecutive_failures END,
+    last_review_status=CASE WHEN $2='Correcta' AND configuration_error THEN 'Sin revisión' ELSE last_review_status END,
+    last_review_message=CASE WHEN $2='Correcta' AND configuration_error THEN NULL ELSE last_review_message END,
     updated_at=NOW()
     WHERE id=$1`,[id,status,msg,permanent,saturated]);
 }
