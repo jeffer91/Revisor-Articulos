@@ -33,7 +33,20 @@
     if(student.reviews.length>1){$('#compare-a').value=student.reviews[0].id;$('#compare-b').value=student.reviews.at(-1).id}
   };
 
-  const showApp=s=>{student=s;$('#student-login-view').classList.add('hidden');$('#student-app-view').classList.remove('hidden');$('#student-name-pill').textContent=s.name;$('#welcome-title').textContent=`Hola, ${s.name.split(' ')[0]}`;refresh();nav('inicio')};
+  async function checkPendingReview(){
+    const id=sessionStorage.getItem('revisor_pending_job');if(!id||!student)return;
+    try{
+      const status=await api(`/reviews/${id}/status`);
+      if(status.status==='complete'){
+        const r=await api(`/reviews/${id}`);sessionStorage.removeItem('revisor_pending_job');await applyRemoteState(student);refresh();showResult(r);toast('Tu revisión pendiente ya finalizó.','success');
+      }else if(['incomplete','failed'].includes(status.status)){
+        sessionStorage.removeItem('revisor_pending_job');await applyRemoteState(student);refresh();toast(status.message||'La revisión pendiente no se completó.','danger');
+      }else{
+        toast('Tienes una revisión todavía en proceso. No inicies otra hasta que finalice.','info');
+      }
+    }catch(err){console.warn('No se pudo recuperar la revisión pendiente:',err)}
+  }
+  const showApp=s=>{student=s;$('#student-login-view').classList.add('hidden');$('#student-app-view').classList.remove('hidden');$('#student-name-pill').textContent=s.name;$('#welcome-title').textContent=`Hola, ${s.name.split(' ')[0]}`;refresh();nav('inicio');checkPendingReview()};
 
   $('#student-login').addEventListener('submit',async e=>{
     e.preventDefault();const cedula=$('#student-id').value.trim();$('#student-login-msg').textContent='Validando registro institucional…';
