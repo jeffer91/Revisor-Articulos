@@ -52,9 +52,3 @@ window.ADMIN_DEMO_DATA = (() => {
   }
 })();
 
-(() => {
-  const script = document.createElement('script');
-  script.src = 'admin-fixes.js';
-  script.defer = true;
-  document.head.appendChild(script);
-})();
