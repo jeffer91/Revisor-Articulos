@@ -172,9 +172,11 @@ async function runReview(job,articleText){
 
     let unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id)),successfulIds=new Set(successes.map(s=>s.model.id));
     if(unresolved.length){
-      const replacements=await Promise.all(unresolved.map(l=>tryFreshAlternatives(job,l,selectable,clean,failures,automatic,attemptedByLane.get(l.id),successfulIds)));
-      for(const out of replacements)if(out)successes.push(out);
-      unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));successfulIds=new Set(successes.map(s=>s.model.id));
+      for(const lane of [...unresolved]){
+        const out=await tryFreshAlternatives(job,lane,selectable,clean,failures,automatic,attemptedByLane.get(lane.id),successfulIds);
+        if(out){successes.push(out);successfulIds.add(out.model.id);}
+      }
+      unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
     }
 
     for(const lane of [...unresolved]){
@@ -190,7 +192,8 @@ async function runReview(job,articleText){
 
     job.step=6;job.message='Los 3 carriles están completos. Consolidando observaciones.';await store.persistJob(job);
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Procesando',message:'Verificando solo alertas críticas con una segunda IA independiente.',updatedAt:new Date().toISOString()};await store.persistJob(job);
-    const criticalCandidates=hybrid.getCriticalCandidates(successes,automatic),verifierPool=[...selectable,...stable];
+    const criticalCandidates=hybrid.getCriticalCandidates(successes,automatic);
+    const verifierPool=(await store.loadModels()).filter(store.isModelSelectable);
     const criticalConfirmations=criticalCandidates.length?await hybrid.verifyCriticalCandidates(successes,verifierPool,clean,automatic):[];
     const confirmed=criticalConfirmations.filter(x=>x.confirmed).length,pending=criticalConfirmations.filter(x=>x.pending).length;
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Correcta',message:criticalCandidates.length?`${criticalCandidates.length} alerta(s) candidata(s); ${confirmed} confirmada(s) y ${pending} pendiente(s).`:'Sin alertas críticas candidatas.',updatedAt:new Date().toISOString()};
