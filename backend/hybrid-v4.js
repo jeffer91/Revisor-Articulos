@@ -179,7 +179,12 @@ function collectWindows(text,terms,limit){
   let out=windows.join('\n');if(out.length>limit)out=out.slice(0,limit);return out||source.slice(0,limit);
 }
 
-function articleForLane(text,model,lane){const providerLimit=Math.max(12000,Number(model.maxInputChars)||90000),laneLimit=Math.min(providerLimit,lane.id==='methodology-analysis'?65000:60000);return collectWindows(text,lane.focus,laneLimit)}
+function articleForLane(text,model,lane){
+  const providerLimit=Math.max(12000,Number(model.maxInputChars)||90000);
+  const target=lane.id==='methodology-analysis'?52000:lane.id==='results-closure'?48000:42000;
+  const laneLimit=Math.min(providerLimit,target);
+  return collectWindows(text,lane.focus,laneLimit);
+}
 
 function laneMicrocriteria(lane){return lane.categories.flatMap(category=>(MICROCRITERIA[category]||[]).map(([id,label,weight])=>({id,label,weight,category})))}
 
