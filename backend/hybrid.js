@@ -1,1 +1,1 @@
-module.exports = require('./hybrid-v3');
+module.exports = require('./hybrid-v4');
