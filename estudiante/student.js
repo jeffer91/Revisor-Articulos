@@ -9,10 +9,10 @@
 
   const localStateKey=cedula=>`revisor_student_state_${cedula}`;
   const loadStudentState=cedula=>{try{return JSON.parse(localStorage.getItem(localStateKey(cedula))||'null')}catch{return null}};
-  const saveStudentState=()=>{if(!student?.cedula)return;localStorage.setItem(localStateKey(student.cedula),JSON.stringify({used:student.used,available:student.available,reviews:student.reviews||[]}))};
+  const saveStudentState=()=>{if(config.API_BASE_URL||!student?.cedula)return;localStorage.setItem(localStateKey(student.cedula),JSON.stringify({used:student.used,available:student.available,reviews:student.reviews||[]}))};
 
   const mapStudent=data=>{
-    const cedula=String(data.cedula||data.id||data.firebaseDocumentId||'').trim(),local=loadStudentState(cedula)||{},reviews=Array.isArray(local.reviews)?local.reviews:[];
+    const cedula=String(data.cedula||data.id||data.firebaseDocumentId||'').trim(),local=config.API_BASE_URL?{}:(loadStudentState(cedula)||{}),reviews=Array.isArray(local.reviews)?local.reviews:[];
     const used=Number.isFinite(local.used)?local.used:reviews.length,available=Number.isFinite(local.available)?local.available:Math.max(0,3-used);
     return {id:data.id||cedula,cedula,name:data.nombres||'Estudiante',career:data.nombreCarreraActual||'',careerCode:data.codigoCarreraActual||'',campus:data.sede||'',institutionalEmail:data.correoInstitucional||'',personalEmail:data.correoPersonal||'',phone:data.celular||'',used,available,reviews,firebaseDocumentId:data.firebaseDocumentId||cedula};
   };
@@ -54,12 +54,12 @@
     try{
       const auth=await api('/student/login',{method:'POST',body:JSON.stringify({cedula})});
       if(!auth?.token||!auth?.student)throw new Error('No fue posible crear la sesión de estudiante.');
-      sessionStorage.setItem('revisor_student_token',auth.token);
+      sessionStorage.removeItem('revisor_research_token');sessionStorage.setItem('revisor_student_token',auth.token);
       sessionStorage.setItem('revisor_student_cedula',cedula);
       const s=mapStudent(auth.student);student=s;await applyRemoteState(s);showApp(s);toast('Registro validado.','success');
     }catch(err){console.error(err);$('#student-login-msg').textContent=err.message||'No fue posible validar el registro en este momento.'}
   });
-  $('#student-logout').addEventListener('click',()=>{sessionStorage.removeItem('revisor_student_token');sessionStorage.removeItem('revisor_student_cedula');sessionStorage.removeItem('revisor_pending_job');location.reload()});
+  $('#student-logout').addEventListener('click',()=>{const cedula=sessionStorage.getItem('revisor_student_cedula');if(cedula)localStorage.removeItem(localStateKey(cedula));sessionStorage.removeItem('revisor_student_token');sessionStorage.removeItem('revisor_student_cedula');sessionStorage.removeItem('revisor_pending_job');location.reload()});
 
   const setFile=f=>{if(!f)return;if(!/\.(pdf|docx)$/i.test(f.name)){toast('Solo se aceptan archivos PDF o DOCX.','danger');return}if(f.size>25*1024*1024){toast('El archivo supera el límite de 25 MB.','danger');return}file=f;$('#selected-file').innerHTML=`<div class="file-chip"><div style="font-size:24px">▤</div><div class="grow"><strong>${esc(f.name)}</strong><span>${(f.size/1024/1024).toFixed(2)} MB</span></div><button class="btn btn-ghost btn-sm" id="remove-file">✕</button></div>`;$('#start-review').disabled=false};
   $('#choose-file').addEventListener('click',()=>$('#article-file').click());
