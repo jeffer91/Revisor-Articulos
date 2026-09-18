@@ -25,7 +25,7 @@
     try{
       const auth=await api('/research/login',{method:'POST',body:JSON.stringify({usuario,pin})});
       if(!auth?.token)throw new Error('No fue posible crear la sesión.');
-      sessionStorage.setItem('revisor_research_token',auth.token);
+      sessionStorage.removeItem('revisor_student_token');sessionStorage.removeItem('revisor_student_cedula');sessionStorage.setItem('revisor_research_token',auth.token);
       if(msg)msg.textContent='';
       showApp();
     }catch(err){if(msg)msg.textContent=err.message||'No fue posible validar el acceso.'}
