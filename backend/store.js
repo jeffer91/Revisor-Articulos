@@ -49,6 +49,11 @@ async function initDb(){
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS configuration_error_message TEXT;
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ;
     ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS last_failure_at TIMESTAMPTZ;
+    ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS health_metrics_version INTEGER NOT NULL DEFAULT 1;
+    UPDATE ai_models
+      SET success_count=0,failure_count=0,saturation_count=0,consecutive_failures=0,average_latency_ms=0,
+          circuit_open_until=NULL,health_metrics_version=2
+      WHERE health_metrics_version<2;
     UPDATE ai_models
       SET configuration_error=TRUE,
           configuration_error_message=COALESCE(configuration_error_message,last_review_message,last_test_message)
@@ -250,8 +255,12 @@ async function getStudentState(cedula){
   const reviews=rev.rows.map((r,i)=>({...r.result,id:r.id,n:i+1,date:r.result?.date||r.created_at}));
   return {used,inProgress,allowed,available:Math.max(0,allowed-used-inProgress),reviews};
 }
-async function grantAttempts(cedula,count=1){ count=Math.max(1,Math.min(20,Number(count)||1)); await pool.query(`INSERT INTO student_limits(cedula,total_allowed) VALUES($1,$2) ON CONFLICT(cedula) DO UPDATE SET total_allowed=student_limits.total_allowed+$2,updated_at=NOW()`,[cedula,count]); return getStudentState(cedula); }
+async function grantAttempts(cedula,count=1){ count=Math.max(1,Math.min(20,Number(count)||1)); await pool.query(`INSERT INTO student_limits(cedula,total_allowed) VALUES($1,3+$2) ON CONFLICT(cedula) DO UPDATE SET total_allowed=student_limits.total_allowed+$2,updated_at=NOW()`,[cedula,count]); return getStudentState(cedula); }
 async function restoreAttempt(jobId){ await pool.query(`UPDATE review_jobs SET consumes_attempt=FALSE,updated_at=NOW() WHERE id=$1`,[jobId]); }
-async function listJobs(){ const {rows}=await pool.query(`SELECT id,cedula,file_name,status,step,reviewers,message,failures,provider_statuses,result,consumes_attempt,created_at,updated_at FROM review_jobs ORDER BY created_at DESC LIMIT 300`); return rows; }
+async function listJobs(){ const {rows}=await pool.query(`
+  SELECT id,cedula,file_name,status,step,reviewers,message,failures,provider_statuses,result,consumes_attempt,created_at,updated_at,
+         ROW_NUMBER() OVER (PARTITION BY cedula ORDER BY created_at ASC)::int AS review_number
+  FROM review_jobs ORDER BY created_at DESC LIMIT 300
+`); return rows; }
 
 module.exports={pool,initDb,loadModels,resolveKey,cloudflareAccountId,configurationProblem,permanentConfigurationError,operationalState,isModelSelectable,cleanModel,saveModelConfig,updateModelTest,updateModelReviewHealth,createJob,reserveStudentJob,persistJob,getJob,getStudentState,grantAttempts,restoreAttempt,listJobs};
