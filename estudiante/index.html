@@ -20,7 +20,7 @@
         <div id="student-login-msg" class="small muted"></div>
       </form>
     </section>
-    <aside class="login-visual"><div class="login-visual-inner"><div class="gold-line"></div><h2>Sube, revisa y mejora</h2><p>Recibe una evaluación académica sobre 100 puntos, un análisis separado de similitud y una estimación orientativa de posible uso de IA.</p></div></aside>
+    <aside class="login-visual"><div class="login-visual-inner"><div class="gold-line"></div><h2>Sube, revisa y mejora</h2><p>Recibe una evaluación académica sobre 100 puntos, un indicador orientativo de similitud textual y una estimación orientativa de posible uso de IA.</p></div></aside>
   </div>
 
   <div id="student-app-view" class="hidden">
@@ -53,7 +53,7 @@
             <div class="step"><div class="step-icon">1</div><div class="step-text"><strong>Validaciones automáticas</strong><span>Estructura, secciones, extensión y señales de referencias.</span></div></div>
             <div class="step"><div class="step-icon">2</div><div class="step-text"><strong>Evaluación académica especializada</strong><span>Metodología, resultados, discusión, coherencia y formato.</span></div></div>
             <div class="step"><div class="step-icon">3</div><div class="step-text"><strong>Referencias</strong><span>Actualidad, consistencia y trazabilidad de las fuentes visibles.</span></div></div>
-            <div class="step"><div class="step-icon">4</div><div class="step-text"><strong>Similitud</strong><span>Indicador separado de la nota académica.</span></div></div>
+            <div class="step"><div class="step-icon">4</div><div class="step-text"><strong>Similitud orientativa</strong><span>Estimación textual separada de la nota; no equivale a un informe antiplagio externo.</span></div></div>
             <div class="step"><div class="step-icon">5</div><div class="step-text"><strong>Posible uso de IA</strong><span>Indicador orientativo e independiente de la nota.</span></div></div>
           </div></div>
         </div>
@@ -68,7 +68,7 @@
         <div class="page-title"><div><h1>Resultado de tu revisión</h1><p id="result-meta"></p></div><button class="btn btn-outline" id="download-report">Descargar informe</button></div>
         <div id="critical-alerts"></div>
         <div class="grid grid-3" id="result-cards" style="margin-top:18px"></div>
-        <div class="card" style="margin-top:18px"><div class="tabs"><button class="tab active" data-result-tab="academico">Académico</button><button class="tab" data-result-tab="plagio">Plagio</button><button class="tab" data-result-tab="ia">Posible IA</button></div><div id="result-panel"></div></div>
+        <div class="card" style="margin-top:18px"><div class="tabs"><button class="tab active" data-result-tab="academico">Académico</button><button class="tab" data-result-tab="plagio">Similitud orientativa</button><button class="tab" data-result-tab="ia">Posible IA</button></div><div id="result-panel"></div></div>
       </section>
 
       <section id="student-section-mis" class="section"><div class="page-title"><div><h1>Mis revisiones</h1><p>Consulta las versiones revisadas y sus informes.</p></div></div><div id="reviews-list" class="grid grid-3"></div></section>
@@ -83,6 +83,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
-  <script src="../assets/config.js"></script><script src="../assets/common.js"></script><script src="../assets/ai-policy.js"></script><script src="student-data.js"></script><script src="student-view.js"></script><script src="student.js"></script>
+  <script src="../assets/config.js"></script><script src="../assets/common.js"></script><script src="student-data.js"></script><script src="student-view.js"></script><script src="student.js"></script>
 </body>
 </html>
