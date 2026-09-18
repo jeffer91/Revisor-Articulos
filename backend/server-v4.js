@@ -199,7 +199,7 @@ async function runReview(job,articleText){
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Correcta',message:criticalCandidates.length?`${criticalCandidates.length} alerta(s) candidata(s); ${confirmed} confirmada(s) y ${pending} pendiente(s).`:'Sin alertas críticas candidatas.',updatedAt:new Date().toISOString()};
     job.step=7;job.message=pending?'Existen alertas críticas pendientes de confirmación independiente; no bloquearán automáticamente la aprobación.':'Confirmación crítica finalizada.';await store.persistJob(job);
 
-    job.result=hybrid.consolidateHybrid(successes,job.file,job.cedula,automatic,criticalConfirmations);job.result.id=job.id;job.status='complete';job.step=8;job.consumesAttempt=true;
+    job.result=hybrid.consolidateHybrid(successes,job.file,job.cedula,automatic,criticalConfirmations,clean);job.result.id=job.id;job.status='complete';job.step=8;job.consumesAttempt=true;
     job.message=`Revisión completada con redundancia ${job.result.redundancy==='high'?'alta':job.result.redundancy==='reduced'?'reducida':'mínima'}.`;await store.persistJob(job);
   }catch(err){
     job.status='failed';job.step=6;job.message=`${String(err.message||err)} Tu intento no fue descontado.`;job.consumesAttempt=false;
