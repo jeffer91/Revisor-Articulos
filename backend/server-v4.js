@@ -305,6 +305,7 @@ const server=http.createServer(async(req,res)=>{
       if(!/^\d{10}$/.test(cedula))return json(res,400,{message:'Cédula inválida.'},origin);
       const student=await firebaseStudent(cedula);
       if(!student)return json(res,404,{message:'Estudiante no registrado.'},origin);
+      await store.upsertStudentProfile(student);
       return json(res,200,{token:signSession('student',cedula,8*60*60*1000),expiresIn:28800,student},origin);
     }
 
@@ -327,12 +328,13 @@ const server=http.createServer(async(req,res)=>{
       if(!requireAdmin(req,res,origin))return;
       if(req.method==='GET'&&url.pathname==='/admin/models')return json(res,200,(await store.loadModels()).map(store.cleanModel),origin);
       if(req.method==='GET'&&url.pathname==='/admin/jobs')return json(res,200,await store.listJobs(),origin);
+      if(req.method==='GET'&&url.pathname==='/admin/students')return json(res,200,await store.listStudentProfiles(),origin);
       if(req.method==='POST'&&url.pathname==='/admin/models/sync'){
         const body=await readJson(req),incoming=Array.isArray(body.models)?body.models:[],current=await store.loadModels();
         for(const item of incoming){const old=current.find(x=>x.id===item.id)||DEFAULT_MODELS.find(x=>x.id===item.id)||{};await store.saveModelConfig({...old,...item,id:item.id},'')}
         return json(res,200,(await store.loadModels()).map(store.cleanModel),origin);
       }
-      const lookup=url.pathname.match(/^\/admin\/students\/(\d{10})\/lookup$/);if(req.method==='GET'&&lookup){const student=await firebaseStudent(lookup[1]);return student?json(res,200,student,origin):json(res,404,{message:'Estudiante no registrado.'},origin)}
+      const lookup=url.pathname.match(/^\/admin\/students\/(\d{10})\/lookup$/);if(req.method==='GET'&&lookup){const student=await firebaseStudent(lookup[1]);if(!student)return json(res,404,{message:'Estudiante no registrado.'},origin);await store.upsertStudentProfile(student);return json(res,200,student,origin)}
       const grant=url.pathname.match(/^\/admin\/students\/(\d{10})\/grant$/);if(req.method==='POST'&&grant){const body=await readJson(req);return json(res,200,await store.grantAttempts(grant[1],body.count),origin)}
       const restore=url.pathname.match(/^\/admin\/reviews\/([0-9a-f-]+)\/restore$/i);if(req.method==='POST'&&restore){await store.restoreAttempt(restore[1]);return json(res,200,{ok:true},origin)}
       const match=url.pathname.match(/^\/admin\/models\/([^/]+)(\/test)?$/);
