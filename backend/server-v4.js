@@ -182,7 +182,30 @@ async function attemptProvider(job,model,clean,failures,lane,automatic,signal=nu
 }
 
 function isStableBackup(model){
-  return model.stableBackup===true||/respaldo estable/i.test(String(model.reviewType||model.specialty||''));
+  const role=String(model.reviewType||model.specialty||'');
+  const identity=String(`${model.provider||''} ${model.name||''} ${model.model||''}`);
+  return model.stableBackup===true||/respaldo\s+(estable|din[aá]mico)/i.test(role)||/openrouter/i.test(identity);
+}
+
+function serializePartialSuccesses(successes){
+  return successes.map(s=>({
+    laneId:s.lane?.id||'',
+    model:{id:s.model?.id||'',name:s.model?.name||'',provider:s.model?.provider||'',priority:s.model?.priority,reviewType:s.model?.reviewType||s.model?.specialty||''},
+    result:{json:s.result?.json||{}},
+    latencyMs:Number(s.latencyMs||0)
+  }));
+}
+
+function restorePartialSuccesses(saved,models){
+  if(!Array.isArray(saved))return [];
+  return saved.map(x=>{
+    const lane=hybrid.REVIEW_LANES.find(l=>l.id===x?.laneId);if(!lane)return null;
+    const current=models.find(m=>m.id===x?.model?.id);
+    const model=current||{...(x.model||{}),state:'Activa'};
+    if(!x?.result?.json)return null;
+    try{hybrid.validateLaneResponse(x.result,lane)}catch{return null}
+    return {ok:true,lane,model,result:x.result,latencyMs:Number(x.latencyMs||0)};
+  }).filter(Boolean);
 }
 
 function modelLaneScore(model,lane){
