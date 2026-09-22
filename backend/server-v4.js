@@ -182,7 +182,30 @@ async function attemptProvider(job,model,clean,failures,lane,automatic,signal=nu
 }
 
 function isStableBackup(model){
-  return model.stableBackup===true||/respaldo estable/i.test(String(model.reviewType||model.specialty||''));
+  const role=String(model.reviewType||model.specialty||'');
+  const identity=String(`${model.provider||''} ${model.name||''} ${model.model||''}`);
+  return model.stableBackup===true||/respaldo\s+(estable|din[aá]mico)/i.test(role)||/openrouter/i.test(identity);
+}
+
+function serializePartialSuccesses(successes){
+  return successes.map(s=>({
+    laneId:s.lane?.id||'',
+    model:{id:s.model?.id||'',name:s.model?.name||'',provider:s.model?.provider||'',priority:s.model?.priority,reviewType:s.model?.reviewType||s.model?.specialty||''},
+    result:{json:s.result?.json||{}},
+    latencyMs:Number(s.latencyMs||0)
+  }));
+}
+
+function restorePartialSuccesses(saved,models){
+  if(!Array.isArray(saved))return [];
+  return saved.map(x=>{
+    const lane=hybrid.REVIEW_LANES.find(l=>l.id===x?.laneId);if(!lane)return null;
+    const current=models.find(m=>m.id===x?.model?.id);
+    const model=current||{...(x.model||{}),state:'Activa'};
+    if(!x?.result?.json)return null;
+    try{hybrid.validateLaneResponse(x.result,lane)}catch{return null}
+    return {ok:true,lane,model,result:x.result,latencyMs:Number(x.latencyMs||0)};
+  }).filter(Boolean);
 }
 
 function modelLaneScore(model,lane){
@@ -257,14 +280,16 @@ async function tryStableBackup(job,lane,stableModels,clean,failures,automatic,at
   return null;
 }
 
-async function runReview(job,articleText){
+async function runReview(job,articleText,{resume=false}={}){
+  let successes=[],automatic=null;
   try{
     const clean=String(articleText||'').replace(/\u0000/g,' ').trim();if(clean.length<700)throw new Error('No se pudo extraer suficiente texto del artículo.');
-    const automatic=hybrid.analyzeAutomatic(clean);job.step=2;job.message='Validaciones automáticas completadas. Seleccionando revisores disponibles.';
-    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
-    job.failures=[];await store.persistJob(job);
+    automatic=hybrid.analyzeAutomatic(clean);job.step=2;job.message=resume?'Recuperando los carriles ya completados y seleccionando revisores para el pendiente.':'Validaciones automáticas completadas. Seleccionando revisores disponibles.';
+    const previousStatuses=resume?(job.providerStatuses||job.provider_statuses||{}):{};
+    job.providerStatuses={...previousStatuses,automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
+    job.failures=resume?(Array.isArray(job.failures)?job.failures:[]):[];await store.persistJob(job);
 
-    const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),failures=[],selectable=[],stable=[];
+    const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),failures=job.failures,selectable=[],stable=[];
     for(const m of active){
       const problem=store.configurationProblem(m),op=store.operationalState(m);
       if(problem||op==='Error de configuración'){
@@ -278,27 +303,32 @@ async function runReview(job,articleText){
       job.providerStatuses[m.id]={name:m.name,provider:m.provider,status:'Disponible',message:'',updatedAt:new Date().toISOString()};
       if(store.isModelSelectable(m))(isStableBackup(m)?stable:selectable).push(m);
     }
-    job.failures=failures;await store.persistJob(job);
-    if(!selectable.length&&!stable.length){
-      const researchJob=/^99\d{8}$/.test(String(job.cedula||''));
-      job.status='incomplete';job.step=6;job.message=researchJob?'No hay revisores operativos en este momento. La revisión no pudo iniciarse.':'No hay revisores operativos en este momento. Tu intento no fue descontado.';
+    const lanes=hybrid.REVIEW_LANES;
+    successes=resume?restorePartialSuccesses(job.result?.partialSuccesses,models):[];
+    const pendingLanes=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
+    job.reviewers=successes.length;job.failures=failures;await store.persistJob(job);
+    if(pendingLanes.length&& !selectable.length&&!stable.length){
+      const researchJob=/^99\d{8}$/.test(String(job.cedula||'')),missing=pendingLanes.map(l=>l.label).join(', ');
+      job.status='incomplete';job.step=6;job.consumesAttempt=false;
+      job.result={partial:true,automatic,partialSuccesses:serializePartialSuccesses(successes)};
+      job.message=researchJob?`No hay revisores operativos para completar: ${missing}. Los carriles ya finalizados permanecen guardados.`:`No hay revisores operativos para completar: ${missing}. Tu intento no fue descontado.`;
       await store.persistJob(job);return;
     }
 
-    const lanes=hybrid.REVIEW_LANES,successes=[],attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()])),allocations=new Map(),reserved=new Set();
-    for(const lane of lanes){
+    const attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()])),allocations=new Map(),reserved=new Set();
+    for(const lane of pendingLanes){
       const ranked=rankedForLane(selectable,lane),primary=ranked.find(m=>!reserved.has(m.id))||ranked[0]||null;
       if(primary)reserved.add(primary.id);allocations.set(lane.id,{primary,hedge:null});
     }
     const hedgeReserved=new Set(reserved);
-    for(const lane of lanes){
+    for(const lane of pendingLanes){
       const primary=allocations.get(lane.id).primary;
       const hedge=rankedForLane(selectable,lane).find(m=>m.id!==primary?.id&&!hedgeReserved.has(m.id))||null;
       if(hedge)hedgeReserved.add(hedge.id);allocations.get(lane.id).hedge=hedge;
     }
 
-    job.message='Evaluando los 3 carriles académicos con revisores especializados.';await store.persistJob(job);
-    const initial=await Promise.all(lanes.map(async lane=>{const {primary,hedge}=allocations.get(lane.id);return runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,attemptedByLane.get(lane.id));}));
+    job.message=resume?`Reintentando únicamente ${pendingLanes.length} carril(es) pendiente(s); ${successes.length} ya están conservados.`:'Evaluando los 3 carriles académicos con revisores especializados.';await store.persistJob(job);
+    const initial=await Promise.all(pendingLanes.map(async lane=>{const {primary,hedge}=allocations.get(lane.id);return runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,attemptedByLane.get(lane.id));}));
     for(const out of initial)if(out)successes.push(out);
 
     let unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id)),successfulIds=new Set(successes.map(s=>s.model.id));
@@ -338,9 +368,10 @@ async function runReview(job,articleText){
     if(unresolved.length||successes.length<3){
       const researchJob=/^99\d{8}$/.test(String(job.cedula||'')),missing=unresolved.map(l=>l.label).join(', ');
       job.status='incomplete';job.step=6;job.consumesAttempt=false;
+      job.result={partial:true,automatic,partialSuccesses:serializePartialSuccesses(successes)};
       job.message=researchJob
-        ?`Revisión parcialmente completada. Quedó pendiente: ${missing}. Los otros carriles sí se conservaron durante esta ejecución; puedes reintentar cuando los proveedores estén disponibles.`
-        :`Revisión parcialmente completada. Quedó pendiente: ${missing}. Tu intento no fue descontado.`;
+        ?`Revisión parcialmente completada. Quedó pendiente: ${missing}. Los carriles completados quedaron guardados y el próximo reintento procesará solo lo pendiente.`
+        :`Revisión parcialmente completada. Quedó pendiente: ${missing}. Tu intento no fue descontado y los carriles completos quedaron guardados.`;
       await store.persistJob(job);return;
     }
 
@@ -445,12 +476,31 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{id,status:'processing'},origin);
     }
 
+    const retry=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/retry$/i);
+    if(req.method==='POST'&&retry){
+      const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
+      const job=await store.getJob(retry[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
+      if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
+      if(job.status==='complete')return json(res,409,{message:'La revisión ya está completa.'},origin);
+      if(job.status==='processing')return json(res,409,{message:'La revisión ya está en proceso.'},origin);
+      const body=await readJson(req,3_000_000),articleText=String(body.articleText||'');
+      if(articleText.length<700)return json(res,400,{message:'No se pudo recuperar suficiente texto del artículo para continuar.'},origin);
+      job.file=job.file||job.file_name||'articulo';
+      job.providerStatuses=job.providerStatuses||job.provider_statuses||{};
+      job.failures=Array.isArray(job.failures)?job.failures:[];
+      job.status='processing';job.step=2;job.consumesAttempt=false;
+      job.message='Reanudando únicamente los carriles pendientes.';
+      await store.persistJob(job);
+      runReview(job,articleText,{resume:true}).catch(err=>console.error('retryReview:',err));
+      return json(res,202,{id:job.id,status:'processing',resumed:true},origin);
+    }
+
     const status=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/status$/i);
     if(req.method==='GET'&&status){
       const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
       const job=await store.getJob(status[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
       if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
-      const payload={id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||'',lanes:laneProgress(job)};
+      const lanes=laneProgress(job),payload={id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||'',lanes,retryable:['incomplete','failed'].includes(job.status),pendingLanes:lanes.filter(x=>x.status!=='complete').map(x=>x.id)};
       if(session.type!=='student')payload.failures=failureSummary(job);
       return json(res,200,payload,origin);
     }

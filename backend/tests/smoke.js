@@ -25,10 +25,18 @@ assert.ok(server.includes('reserveStudentJob(job)'), 'Los intentos deben reserva
 assert.ok(server.includes("verifySession(bearer(req),['student','research'])"), 'Las revisiones deben exigir sesión.');
 assert.ok(server.includes('FINAL_RECOVERY_DELAY_MS'), 'Debe existir recuperación final de carriles sin repetir los ya completados.');
 assert.ok(server.includes('laneProgress(job)'), 'El estado público debe informar el progreso por carril.');
+assert.ok(server.includes('serializePartialSuccesses'), 'Los carriles completados deben persistirse cuando una revisión queda parcial.');
+assert.ok(server.includes("/retry$/i"), 'Debe existir una ruta para reanudar una revisión parcial.');
+assert.ok(server.includes("runReview(job,articleText,{resume:true})"), 'El reintento debe reanudar el mismo trabajo y no crear otra revisión.');
+assert.ok(server.includes("respaldo\\s+(estable|din[aá]mico)"), 'El respaldo dinámico existente debe reconocerse en tiempo de ejecución.');
 
 const ai=read('ai.js');
 assert.ok(ai.includes('Entrada excedida'), 'Los límites de contexto/tokens deben clasificarse por separado.');
 assert.ok(ai.includes('HTTP ${status}:'), 'Los errores de proveedor deben conservar el código HTTP.');
+
+const research=fs.readFileSync(path.join(root,'..','investigacion','investigacion.js'),'utf8');
+assert.ok(research.includes('Reintentar solo lo pendiente'), 'Investigación debe reintentar únicamente el carril pendiente.');
+assert.ok(research.includes('/retry'), 'Investigación debe usar el endpoint de reanudación.');
 
 const store=read('store.js');
 assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(status)"),'Procesando no debe contabilizarse como fallo.');
