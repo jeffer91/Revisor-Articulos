@@ -8,30 +8,21 @@
     $(id)?.classList.add('active');
     window.scrollTo({top:0,behavior:'smooth'});
   };
-  const showApp=()=>{
-    $('#research-login-view')?.classList.add('hidden');
-    $('#research-app')?.classList.remove('hidden');
-    show('#view-upload');
-  };
-  const logout=()=>{
-    sessionStorage.removeItem('revisor_research_token');
-    location.reload();
-  };
-
-  $('#research-login')?.addEventListener('submit',async e=>{
-    e.preventDefault();
-    const usuario=$('#research-user')?.value.trim()||'',pin=$('#research-pin')?.value.trim()||'',msg=$('#research-login-msg');
-    if(msg)msg.textContent='Validando acceso…';
-    try{
-      const auth=await api('/research/login',{method:'POST',body:JSON.stringify({usuario,pin})});
-      if(!auth?.token)throw new Error('No fue posible crear la sesión.');
-      sessionStorage.removeItem('revisor_student_token');sessionStorage.removeItem('revisor_student_cedula');sessionStorage.setItem('revisor_research_token',auth.token);
-      if(msg)msg.textContent='';
-      showApp();
-    }catch(err){if(msg)msg.textContent=err.message||'No fue posible validar el acceso.'}
-  });
-  $('#research-logout')?.addEventListener('click',logout);
-  if(sessionStorage.getItem('revisor_research_token'))showApp();
+  let sessionPromise=null;
+  async function ensureResearchSession(){
+    sessionStorage.removeItem('revisor_student_token');
+    sessionStorage.removeItem('revisor_student_cedula');
+    const existing=sessionStorage.getItem('revisor_research_token');
+    if(existing)return existing;
+    if(sessionPromise)return sessionPromise;
+    sessionPromise=api('/research/session',{method:'POST',body:'{}'}).then(auth=>{
+      if(!auth?.token)throw new Error('No fue posible iniciar la sesión de revisión.');
+      sessionStorage.setItem('revisor_research_token',auth.token);
+      return auth.token;
+    }).finally(()=>{sessionPromise=null});
+    return sessionPromise;
+  }
+  void ensureResearchSession().catch(err=>console.error('research session:',err));
 
   const setFile = f => {
     if(!f)return;
@@ -144,6 +135,7 @@
     if(!currentJobId||lastArticleText.length<700){await startReview();return;}
     resetProcessView('Reanudando únicamente los carriles pendientes…');
     try{
+      await ensureResearchSession();
       await api(`/reviews/${currentJobId}/retry`,{method:'POST',body:JSON.stringify({articleText:lastArticleText})});
       await monitorReview(currentJobId);
     }catch(err){
@@ -165,6 +157,7 @@
     $('#process-error').innerHTML='';
     renderLaneProgress([]);
     try{
+      await ensureResearchSession();
       const articleText=await extractText(file);
       if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
       if(articleText.length>2500000)throw new Error('El documento extraído es demasiado extenso para una revisión segura.');
