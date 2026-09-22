@@ -110,8 +110,7 @@ function laneProgress(job){
     const entries=Object.values(statuses).filter(x=>x&&x.lane===lane.label);
     const complete=entries.some(x=>x.status==='Correcta');
     const processing=entries.some(x=>x.status==='Procesando');
-    const failed=entries.some(x=>['Error','Saturada','Entrada excedida','Sin configurar','Error de configuración'].includes(x.status));
-    return {id:lane.id,label:lane.label,status:complete?'complete':processing?'processing':terminal&&failed?'failed':'pending'};
+    return {id:lane.id,label:lane.label,status:complete?'complete':processing?'processing':terminal?'failed':'pending'};
   });
 }
 function failureSummary(job){
@@ -130,7 +129,8 @@ const FINAL_RECOVERY_DELAY_MS=25000;
 const isInputLimitError=message=>/request too large|context length|maximum context|input too long|too many tokens|requested\s+\d+.*tokens|tokens per minute/i.test(String(message||''));
 
 async function setProvider(job,model,status,message='',latencyMs=null,lane=null){
-  job.providerStatuses[model.id]={name:model.name,provider:model.provider,status,message:String(message||'').slice(0,500),latencyMs,lane:lane?.label||'',updatedAt:new Date().toISOString()};
+  const key=lane?.id?`${model.id}:${lane.id}`:model.id;
+  job.providerStatuses[key]={modelId:model.id,name:model.name,provider:model.provider,status,message:String(message||'').slice(0,500),latencyMs,lane:lane?.label||'',updatedAt:new Date().toISOString()};
   await store.updateModelReviewHealth(model,status,message,job.id,latencyMs);
   await store.persistJob(job);
 }
