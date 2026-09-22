@@ -8,27 +8,11 @@
   <link rel="stylesheet" href="../assets/styles.css" />
 </head>
 <body>
-  <div id="research-login-view" class="login-shell">
-    <section class="login-panel">
-      <img class="logo" src="../assets/logo.svg" alt="ITSQMET" />
-      <div class="gold-line"></div>
-      <h1>Investigación</h1>
-      <p>Acceso restringido para revisión técnica de artículos.</p>
-      <form id="research-login" class="grid" autocomplete="off">
-        <div class="field"><label for="research-user">Usuario</label><input id="research-user" class="input" autocomplete="username" required /></div>
-        <div class="field"><label for="research-pin">PIN</label><input id="research-pin" class="input" type="password" inputmode="numeric" autocomplete="current-password" required /></div>
-        <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
-        <div id="research-login-msg" class="small muted"></div>
-      </form>
-    </section>
-    <aside class="login-visual"><div class="login-visual-inner"><div class="gold-line"></div><h2>Revisión académica</h2><p>El acceso está protegido y cada trabajo se procesa sin utilizar la cuota de revisiones estudiantiles.</p></div></aside>
-  </div>
-
-  <div id="research-app" class="hidden">
+  <div id="research-app">
     <div class="brand-strip"></div>
     <header class="topbar"><div class="topbar-inner">
       <div class="brand"><img src="../assets/logo.svg" alt="ITSQMET"><div class="brand-text"><strong>Revisión Académica</strong><span>Investigación</span></div></div>
-      <div class="user-actions"><button id="research-logout" class="btn btn-outline btn-sm">Salir</button></div>
+      
     </div></header>
 
     <main class="container">
