@@ -86,11 +86,17 @@ function providerError(data,status){
   const detail=String(data?.error?.message||data?.errors?.[0]?.message||data?.message||data?.detail||'Error del proveedor');
   return `HTTP ${status}: ${detail}`;
 }
+function hardInputLimit(message){
+  const s=String(message||'');
+  if(/request too large|context length|maximum context|input too long|too many tokens/i.test(s))return true;
+  const limit=Number(s.match(/\bLimit\s+(\d+)/i)?.[1]||0),requested=Number(s.match(/\bRequested\s+(\d+)/i)?.[1]||0);
+  return limit>0&&requested>limit;
+}
 function classifyFailure(message){
   const s=String(message||'');
   if(/sin api key|falta el account id|falta el endpoint|falta el identificador/i.test(s))return 'Sin configurar';
-  if(/request too large|context length|maximum context|input too long|too many tokens|requested\s+\d+.*tokens|tokens per minute/i.test(s))return 'Entrada excedida';
-  if(/408|429|500|502|503|504|high demand|temporar|overload|capacity|timeout|abort|rate limit/i.test(s))return 'Saturada';
+  if(hardInputLimit(s))return 'Entrada excedida';
+  if(/408|429|500|502|503|504|high demand|temporar|overload|capacity|timeout|abort|rate limit|tokens per minute/i.test(s))return 'Saturada';
   return 'Error';
 }
 
