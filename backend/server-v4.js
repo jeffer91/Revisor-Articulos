@@ -476,12 +476,31 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{id,status:'processing'},origin);
     }
 
+    const retry=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/retry$/i);
+    if(req.method==='POST'&&retry){
+      const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
+      const job=await store.getJob(retry[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
+      if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
+      if(job.status==='complete')return json(res,409,{message:'La revisión ya está completa.'},origin);
+      if(job.status==='processing')return json(res,409,{message:'La revisión ya está en proceso.'},origin);
+      const body=await readJson(req,3_000_000),articleText=String(body.articleText||'');
+      if(articleText.length<700)return json(res,400,{message:'No se pudo recuperar suficiente texto del artículo para continuar.'},origin);
+      job.file=job.file||job.file_name||'articulo';
+      job.providerStatuses=job.providerStatuses||job.provider_statuses||{};
+      job.failures=Array.isArray(job.failures)?job.failures:[];
+      job.status='processing';job.step=2;job.consumesAttempt=false;
+      job.message='Reanudando únicamente los carriles pendientes.';
+      await store.persistJob(job);
+      runReview(job,articleText,{resume:true}).catch(err=>console.error('retryReview:',err));
+      return json(res,202,{id:job.id,status:'processing',resumed:true},origin);
+    }
+
     const status=url.pathname.match(/^\/reviews\/([0-9a-f-]+)\/status$/i);
     if(req.method==='GET'&&status){
       const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
       const job=await store.getJob(status[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
       if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
-      const payload={id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||'',lanes:laneProgress(job)};
+      const lanes=laneProgress(job),payload={id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||'',lanes,retryable:['incomplete','failed'].includes(job.status),pendingLanes:lanes.filter(x=>x.status!=='complete').map(x=>x.id)};
       if(session.type!=='student')payload.failures=failureSummary(job);
       return json(res,200,payload,origin);
     }
