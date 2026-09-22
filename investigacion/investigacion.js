@@ -71,6 +71,15 @@
 
   const extractText=f=>/\.pdf$/i.test(f.name)?extractPdf(f):extractDocx(f);
 
+  function renderLaneProgress(lanes=[]){
+    const box=$('#lane-progress');if(!box)return;
+    const state={complete:['✓','Completado','badge-success'],processing:['…','Procesando','badge-info'],failed:['!','No completado','badge-danger'],pending:['·','Pendiente','badge-warning']};
+    box.innerHTML=(lanes||[]).map(l=>{
+      const [icon,label,klass]=state[l.status]||state.pending;
+      return `<div class="step"><div class="step-icon">${icon}</div><div class="step-text"><strong>${esc(l.label)}</strong><span><span class="badge ${klass}">${label}</span></span></div></div>`;
+    }).join('');
+  }
+
   function renderResult(r){
     $('#result-meta').textContent=`${r.file} · ${new Date(r.date).toLocaleString('es-EC')}`;
     $('#score-card').innerHTML=`<div class="score-big">${esc(r.score)}</div><div class="score-caption">Nota académica / 100</div><div style="margin-top:10px"><span class="badge ${r.approved?'badge-success':'badge-danger'}">${r.approved?'APROBADO':'NO APROBADO'}</span></div>`;
@@ -84,9 +93,12 @@
   async function startReview(){
     if(!file)return;
     show('#view-process');
+    $('#process-title').textContent='Analizando artículo';
+    $('#process-subtitle').textContent='No cierres esta pestaña mientras se completa la revisión.';
     $('#process-progress').style.width='8%';
     $('#process-text').innerHTML='<strong>Extrayendo contenido del artículo…</strong>';
     $('#process-error').innerHTML='';
+    renderLaneProgress([]);
     try{
       const articleText=await extractText(file);
       if(articleText.length<700)throw new Error('No se pudo extraer suficiente texto del artículo. Verifica que el PDF tenga texto seleccionable.');
@@ -98,24 +110,47 @@
       let status;
       do{
         if(Date.now()>deadline){
-          $('#process-error').innerHTML='<div class="alert alert-warning"><div>!</div><div><strong>La revisión continúa en el servidor</strong><div class="small">No inicies otra revisión mientras este trabajo siga activo. Vuelve a esta sección más tarde.</div></div></div>';
+          $('#process-title').textContent='La revisión continúa';
+          $('#process-subtitle').textContent='El servidor sigue procesando el artículo.';
+          $('#process-error').innerHTML='<div class="alert alert-warning"><div>!</div><div><strong>La revisión continúa en el servidor</strong><div class="small">No inicies otra revisión mientras este trabajo siga activo.</div></div></div>';
           return;
         }
         await new Promise(r=>setTimeout(r,1800));
         status=await api(`/reviews/${start.id}/status`);
-        const pct=Math.min(92,18+(Number(status.step||1)/8)*74);
+        renderLaneProgress(status.lanes||[]);
+        const completed=(status.lanes||[]).filter(x=>x.status==='complete').length;
+        const processing=(status.lanes||[]).filter(x=>x.status==='processing').length;
+        const pct=status.status==='complete'?100:Math.min(94,18+(completed*23)+(processing?9:0));
         $('#process-progress').style.width=`${pct}%`;
         $('#process-text').innerHTML=`<strong>${esc(status.message||'Analizando criterios y consolidando observaciones…')}</strong>`;
       }while(!['complete','incomplete','failed'].includes(status.status));
-      if(status.status!=='complete')throw new Error(status.message||'No fue posible completar la revisión.');
+
+      if(status.status!=='complete'){
+        const partial=status.status==='incomplete';
+        $('#process-title').textContent=partial?'Revisión parcialmente completada':'No fue posible completar la revisión';
+        $('#process-subtitle').textContent=partial?'Uno de los carriles académicos no logró finalizar.':'La revisión terminó por un problema técnico.';
+        const completed=(status.lanes||[]).filter(x=>x.status==='complete').length;
+        $('#process-progress').style.width=`${Math.max(18,Math.round(completed/3*100))}%`;
+        const details=(status.failures||[]).slice(-5).map(x=>`<li><strong>${esc(x.lane||'Carril')}</strong> · ${esc(x.provider||'Proveedor')} / ${esc(x.model||'Modelo')}: ${esc(x.status||'Error')}</li>`).join('');
+        $('#process-error').innerHTML=`<div class="alert ${partial?'alert-warning':'alert-danger'}"><div>!</div><div><strong>${partial?'Quedó un carril pendiente':'La revisión se interrumpió'}</strong><div class="small">${esc(status.message||'No fue posible completar la revisión.')}</div>${details?`<ul class="small" style="margin:10px 0 0 18px">${details}</ul>`:''}<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="retry-review">Reintentar revisión</button><button class="btn btn-outline btn-sm" id="back-upload">Volver</button></div></div></div>`;
+        $('#retry-review')?.addEventListener('click',()=>void startReview());
+        $('#back-upload')?.addEventListener('click',()=>show('#view-upload'));
+        return;
+      }
+
       const result=await api(`/reviews/${start.id}`);
+      $('#process-title').textContent='Revisión completada';
+      $('#process-subtitle').textContent='Los tres carriles académicos finalizaron correctamente.';
       $('#process-progress').style.width='100%';
       renderResult(result);
     }catch(err){
       console.error(err);
       if(/sesión|session|401/i.test(String(err.message||'')))sessionStorage.removeItem('revisor_research_token');
-      $('#process-error').innerHTML=`<div class="alert alert-danger"><div>!</div><div><strong>No fue posible completar la revisión</strong><div class="small">${esc(err.message||'Ocurrió un error técnico.')}</div><div style="margin-top:12px"><button class="btn btn-outline btn-sm" id="retry">Volver</button></div></div></div>`;
-      $('#retry')?.addEventListener('click',()=>show('#view-upload'));
+      $('#process-title').textContent='No fue posible completar la revisión';
+      $('#process-subtitle').textContent='Se produjo un problema antes de finalizar el análisis.';
+      $('#process-error').innerHTML=`<div class="alert alert-danger"><div>!</div><div><strong>Error de revisión</strong><div class="small">${esc(err.message||'Ocurrió un error técnico.')}</div><div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="retry-review">Reintentar revisión</button><button class="btn btn-outline btn-sm" id="back-upload">Volver</button></div></div></div>`;
+      $('#retry-review')?.addEventListener('click',()=>void startReview());
+      $('#back-upload')?.addEventListener('click',()=>show('#view-upload'));
     }
   }
 
