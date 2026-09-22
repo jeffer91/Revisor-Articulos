@@ -32,6 +32,8 @@ assert.ok(server.includes("respaldo\\s+(estable|din[aá]mico)"), 'El respaldo di
 
 const ai=read('ai.js');
 assert.ok(ai.includes('Entrada excedida'), 'Los límites de contexto/tokens deben clasificarse por separado.');
+assert.ok(ai.includes('hardInputLimit'), 'Debe distinguirse un límite duro de entrada de una saturación TPM temporal.');
+assert.ok(ai.includes('requested>limit'), 'Solo una solicitud que supera por sí sola el límite debe tratarse como entrada excedida.');
 assert.ok(ai.includes('HTTP ${status}:'), 'Los errores de proveedor deben conservar el código HTTP.');
 
 const research=fs.readFileSync(path.join(root,'..','investigacion','investigacion.js'),'utf8');
