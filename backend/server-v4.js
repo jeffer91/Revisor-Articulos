@@ -104,9 +104,30 @@ function publicResult(result){
   return out;
 }
 function publicStudentState(state){return {...state,reviews:(state?.reviews||[]).map(publicResult)}}
+function laneProgress(job){
+  const statuses=job?.providerStatuses||job?.provider_statuses||{},terminal=['complete','incomplete','failed'].includes(String(job?.status||''));
+  return hybrid.REVIEW_LANES.map(lane=>{
+    const entries=Object.values(statuses).filter(x=>x&&x.lane===lane.label);
+    const complete=entries.some(x=>x.status==='Correcta');
+    const processing=entries.some(x=>x.status==='Procesando');
+    const failed=entries.some(x=>['Error','Saturada','Entrada excedida','Sin configurar','Error de configuración'].includes(x.status));
+    return {id:lane.id,label:lane.label,status:complete?'complete':processing?'processing':terminal&&failed?'failed':'pending'};
+  });
+}
+function failureSummary(job){
+  return (Array.isArray(job?.failures)?job.failures:[]).slice(-8).map(x=>({
+    lane:String(x?.lane||''),
+    model:String(x?.model||''),
+    provider:String(x?.provider||''),
+    status:String(x?.status||'Error'),
+    message:String(x?.message||'').replace(/https?:\/\/\S+/g,'').slice(0,260).trim()
+  }));
+}
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const HEDGE_DELAY_MS=22000;
+const FINAL_RECOVERY_DELAY_MS=25000;
+const isInputLimitError=message=>/request too large|context length|maximum context|input too long|too many tokens|requested\s+\d+.*tokens|tokens per minute/i.test(String(message||''));
 
 async function setProvider(job,model,status,message='',latencyMs=null,lane=null){
   job.providerStatuses[model.id]={name:model.name,provider:model.provider,status,message:String(message||'').slice(0,500),latencyMs,lane:lane?.label||'',updatedAt:new Date().toISOString()};
@@ -114,12 +135,33 @@ async function setProvider(job,model,status,message='',latencyMs=null,lane=null)
   await store.persistJob(job);
 }
 
-async function attemptProvider(job,model,clean,failures,lane,automatic,signal=null){
+async function attemptProvider(job,model,clean,failures,lane,automatic,signal=null,forceCompact=false){
   const started=Date.now();await setProvider(job,model,'Procesando',`Carril: ${lane.label}`,null,lane);
   try{
-    const article=hybrid.articleForLane(clean,model,lane),prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic);
-    const runtimeModel={...model,timeout:Math.min(Math.max(Number(model.timeout)||90,105),140)};
-    const result=await ai.callModel(runtimeModel,prompt,signal);
+    let article=hybrid.articleForLane(clean,model,lane,forceCompact?8500:null);
+    let runtimeModel={...model,timeout:Math.min(Math.max(Number(model.timeout)||90,105),140),tokens:Math.min(Number(model.tokens)||1800,forceCompact?1200:2200)};
+    let prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic),result;
+    try{
+      result=await ai.callModel(runtimeModel,prompt,signal);
+    }catch(firstErr){
+      if(!isInputLimitError(firstErr?.message||firstErr))throw firstErr;
+      article=hybrid.articleForLane(clean,model,lane,8000);
+      runtimeModel={...runtimeModel,tokens:1000};
+      prompt=hybrid.buildSpecializedPrompt(article,model,lane,automatic);
+      await setProvider(job,model,'Procesando',`Carril: ${lane.label} · ajustando contexto por límite de tokens`,null,lane);
+      result=await ai.callModel(runtimeModel,prompt,signal);
+    }
+
+    let missing=hybrid.missingLaneMicrocriteria(result,lane);
+    if(missing.length){
+      await setProvider(job,model,'Procesando',`Carril: ${lane.label} · completando ${missing.length} microcriterio(s) faltante(s)`,null,lane);
+      const repairPrompt=hybrid.buildMissingMicrocriteriaPrompt(article,model,lane,missing);
+      const repairModel={...runtimeModel,tokens:Math.min(900,Number(runtimeModel.tokens)||900)};
+      const repair=await ai.callModel(repairModel,repairPrompt,signal);
+      result=hybrid.mergeLaneRepairResult(result,repair);
+      missing=hybrid.missingLaneMicrocriteria(result,lane);
+    }
+
     hybrid.validateLaneResponse(result,lane);
     const latency=Date.now()-started;
     await setProvider(job,model,'Correcta',`Carril: ${lane.label}`,latency,lane);
@@ -237,7 +279,11 @@ async function runReview(job,articleText){
       if(store.isModelSelectable(m))(isStableBackup(m)?stable:selectable).push(m);
     }
     job.failures=failures;await store.persistJob(job);
-    if(!selectable.length&&!stable.length){job.status='incomplete';job.step=6;job.message='No hay revisores operativos en este momento. Tu intento no fue descontado.';await store.persistJob(job);return;}
+    if(!selectable.length&&!stable.length){
+      const researchJob=/^99\d{8}$/.test(String(job.cedula||''));
+      job.status='incomplete';job.step=6;job.message=researchJob?'No hay revisores operativos en este momento. La revisión no pudo iniciarse.':'No hay revisores operativos en este momento. Tu intento no fue descontado.';
+      await store.persistJob(job);return;
+    }
 
     const lanes=hybrid.REVIEW_LANES,successes=[],attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()])),allocations=new Map(),reserved=new Set();
     for(const lane of lanes){
@@ -272,8 +318,31 @@ async function runReview(job,articleText){
     for(const lane of [...unresolved]){const out=await tryStableBackup(job,lane,stable,clean,failures,automatic,attemptedByLane.get(lane.id));if(out)successes.push(out);}
     unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
 
+    if(unresolved.length){
+      job.message=`Se completaron ${successes.length} de 3 carriles. Esperando brevemente para recuperar ${unresolved.map(l=>l.label).join(', ')} sin repetir los carriles ya finalizados.`;
+      await store.persistJob(job);
+      await sleep(FINAL_RECOVERY_DELAY_MS);
+      const refreshed=(await store.loadModels()).filter(store.isModelSelectable);
+      for(const lane of [...unresolved]){
+        const pool=[...rankedForLane(refreshed,lane),...rankedForLane(refreshed,lane,{stable:true})].slice(0,4);
+        for(const model of pool){
+          job.message=`Recuperación final de "${lane.label}" con contexto compacto.`;await store.persistJob(job);
+          const out=await attemptProvider(job,model,clean,failures,lane,automatic,null,true);
+          if(out){successes.push(out);break;}
+        }
+      }
+      unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
+    }
+
     job.failures=failures;job.reviewers=successes.length;
-    if(unresolved.length||successes.length<3){job.status='incomplete';job.step=6;job.message=`Se completaron ${successes.length} de 3 carriles académicos. Se agotaron los revisores operativos y los mecanismos de respaldo. Tu intento no fue descontado.`;await store.persistJob(job);return;}
+    if(unresolved.length||successes.length<3){
+      const researchJob=/^99\d{8}$/.test(String(job.cedula||'')),missing=unresolved.map(l=>l.label).join(', ');
+      job.status='incomplete';job.step=6;job.consumesAttempt=false;
+      job.message=researchJob
+        ?`Revisión parcialmente completada. Quedó pendiente: ${missing}. Los otros carriles sí se conservaron durante esta ejecución; puedes reintentar cuando los proveedores estén disponibles.`
+        :`Revisión parcialmente completada. Quedó pendiente: ${missing}. Tu intento no fue descontado.`;
+      await store.persistJob(job);return;
+    }
 
     job.step=6;job.message='Los 3 carriles están completos. Consolidando observaciones.';await store.persistJob(job);
     job.providerStatuses.criticalVerification={name:'Confirmación de alertas críticas',provider:'Motor híbrido',status:'Procesando',message:'Verificando solo alertas críticas con una segunda IA independiente.',updatedAt:new Date().toISOString()};await store.persistJob(job);
@@ -288,7 +357,8 @@ async function runReview(job,articleText){
     job.result=hybrid.consolidateHybrid(successes,job.file,job.cedula,automatic,criticalConfirmations,clean);job.result.id=job.id;job.status='complete';job.step=8;job.consumesAttempt=true;
     job.message=`Revisión completada con redundancia ${job.result.redundancy==='high'?'alta':job.result.redundancy==='reduced'?'reducida':'mínima'}.`;await store.persistJob(job);
   }catch(err){
-    job.status='failed';job.step=6;job.message=`${String(err.message||err)} Tu intento no fue descontado.`;job.consumesAttempt=false;
+    const researchJob=/^99\d{8}$/.test(String(job.cedula||''));
+    job.status='failed';job.step=6;job.message=researchJob?String(err.message||err):`${String(err.message||err)} Tu intento no fue descontado.`;job.consumesAttempt=false;
     try{await store.persistJob(job)}catch(dbErr){console.error('No se pudo persistir el fallo:',dbErr)}
   }
 }
@@ -380,7 +450,9 @@ const server=http.createServer(async(req,res)=>{
       const session=verifySession(bearer(req),['student','research','admin']);if(!session)return json(res,401,{message:'Sesión no válida.'},origin);
       const job=await store.getJob(status[1]);if(!job)return json(res,404,{message:'Revisión no encontrada.'},origin);
       if(!canAccessJob(session,job))return json(res,403,{message:'No tienes acceso a esta revisión.'},origin);
-      return json(res,200,{id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||''},origin);
+      const payload={id:job.id,status:job.status,step:job.step,reviewers:job.reviewers,message:job.message||'',lanes:laneProgress(job)};
+      if(session.type!=='student')payload.failures=failureSummary(job);
+      return json(res,200,payload,origin);
     }
     const result=url.pathname.match(/^\/reviews\/([0-9a-f-]+)$/i);
     if(req.method==='GET'&&result){
