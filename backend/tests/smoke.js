@@ -21,6 +21,9 @@ assert.ok(hybrid.includes('providerContextBudget'), 'Cada proveedor debe respeta
 const server=read('server-v4.js');
 assert.ok(!/ADMIN_LOGIN_HASH=process\.env\.ADMIN_LOGIN_HASH\|\|['"][a-f0-9]{64}/i.test(server),'No debe existir hash administrativo fallback.');
 assert.ok(server.includes("url.pathname==='/student/login'"),'Debe existir login de estudiante.');
+assert.ok(server.includes("url.pathname==='/research/session'"),'Investigación debe crear sesión automática sin login.');
+assert.ok(!server.includes("url.pathname==='/research/login'"),'Investigación no debe exponer login.');
+assert.ok(!server.includes('RESEARCH_LOGIN_HASH'),'Investigación no debe depender de credenciales de acceso.');
 assert.ok(server.includes('reserveStudentJob(job)'), 'Los intentos deben reservarse de forma atómica.');
 assert.ok(server.includes("verifySession(bearer(req),['student','research'])"), 'Las revisiones deben exigir sesión.');
 assert.ok(server.includes('FINAL_RECOVERY_DELAY_MS'), 'Debe existir recuperación final de carriles sin repetir los ya completados.');
@@ -37,8 +40,13 @@ assert.ok(ai.includes('requested>limit'), 'Solo una solicitud que supera por sí
 assert.ok(ai.includes('HTTP ${status}:'), 'Los errores de proveedor deben conservar el código HTTP.');
 
 const research=fs.readFileSync(path.join(root,'..','investigacion','investigacion.js'),'utf8');
+const researchHtml=fs.readFileSync(path.join(root,'..','investigacion','index.html'),'utf8');
 assert.ok(research.includes('Reintentar solo lo pendiente'), 'Investigación debe reintentar únicamente el carril pendiente.');
 assert.ok(research.includes('/retry'), 'Investigación debe usar el endpoint de reanudación.');
+assert.ok(research.includes('/research/session'), 'Investigación debe obtener una sesión automática.');
+assert.ok(!research.includes('/research/login'), 'Investigación no debe intentar iniciar sesión con usuario y PIN.');
+assert.ok(!researchHtml.includes('research-login'), 'La interfaz de Investigación no debe mostrar formulario de login.');
+assert.ok(!researchHtml.includes('research-logout'), 'La interfaz de Investigación no debe mostrar botón de salir.');
 
 const store=read('store.js');
 assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(status)"),'Procesando no debe contabilizarse como fallo.');

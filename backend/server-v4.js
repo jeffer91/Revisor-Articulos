@@ -9,7 +9,6 @@ const PORT=Number(process.env.PORT||10000);
 const ALLOWED_ORIGINS=(process.env.ALLOWED_ORIGINS||'https://jeffer91.github.io,http://localhost:8080,http://127.0.0.1:8080').split(',').map(x=>x.trim()).filter(Boolean);
 const ADMIN_LOGIN_HASH=String(process.env.ADMIN_LOGIN_HASH||'').trim();
 const SESSION_SECRET=String(process.env.SESSION_SECRET||'').trim();
-const RESEARCH_LOGIN_HASH=String(process.env.RESEARCH_LOGIN_HASH||ADMIN_LOGIN_HASH).trim();
 const FIREBASE_API_KEY=String(process.env.FIREBASE_API_KEY||'').trim();
 const FIREBASE_PROJECT_ID=String(process.env.FIREBASE_PROJECT_ID||'').trim();
 const FIREBASE_DATABASE_ID=String(process.env.FIREBASE_DATABASE_ID||'(default)').trim();
@@ -40,7 +39,7 @@ function verifySession(token,types=[]){
   }catch{return null}
 }
 function bearer(req){const a=String(req.headers.authorization||'');return a.startsWith('Bearer ')?a.slice(7):''}
-function clientIp(req){return String(req.headers['x-forwarded-for']||'').split(',')[0].trim()||clientIp(req)}
+function clientIp(req){return String(req.headers['x-forwarded-for']||'').split(',')[0].trim()||String(req.socket?.remoteAddress||'unknown')}
 function requireAdmin(req,res,origin){
   const session=verifySession(bearer(req),['admin']);
   if(!session){json(res,401,{message:'Sesión administrativa no válida.'},origin);return null}
@@ -415,11 +414,9 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,{token:signSession('student',cedula,8*60*60*1000),expiresIn:28800,student},origin);
     }
 
-    if(req.method==='POST'&&url.pathname==='/research/login'){
-      const body=await readJson(req),ip=clientIp(req);
-      if(!allowRequest(`research-login:${ip}`,10,10*60*1000))return json(res,429,{message:'Demasiados intentos. Intenta más tarde.'},origin);
-      const hash=sha256(`${String(body.usuario||'').trim()}:${String(body.pin||'').trim()}`);
-      if(!safeHashMatch(hash,RESEARCH_LOGIN_HASH))return json(res,401,{message:'Usuario o PIN incorrectos.'},origin);
+    if(req.method==='POST'&&url.pathname==='/research/session'){
+      const ip=clientIp(req);
+      if(!allowRequest(`research-session:${ip}`,40,60*60*1000))return json(res,429,{message:'Se alcanzó el límite temporal de sesiones de revisión. Intenta más tarde.'},origin);
       return json(res,200,{token:signSession('research','research',8*60*60*1000),expiresIn:28800},origin);
     }
 
