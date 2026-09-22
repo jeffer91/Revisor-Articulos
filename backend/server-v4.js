@@ -280,14 +280,16 @@ async function tryStableBackup(job,lane,stableModels,clean,failures,automatic,at
   return null;
 }
 
-async function runReview(job,articleText){
+async function runReview(job,articleText,{resume=false}={}){
+  let successes=[],automatic=null;
   try{
     const clean=String(articleText||'').replace(/\u0000/g,' ').trim();if(clean.length<700)throw new Error('No se pudo extraer suficiente texto del artículo.');
-    const automatic=hybrid.analyzeAutomatic(clean);job.step=2;job.message='Validaciones automáticas completadas. Seleccionando revisores disponibles.';
-    job.providerStatuses={automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
-    job.failures=[];await store.persistJob(job);
+    automatic=hybrid.analyzeAutomatic(clean);job.step=2;job.message=resume?'Recuperando los carriles ya completados y seleccionando revisores para el pendiente.':'Validaciones automáticas completadas. Seleccionando revisores disponibles.';
+    const previousStatuses=resume?(job.providerStatuses||job.provider_statuses||{}):{};
+    job.providerStatuses={...previousStatuses,automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
+    job.failures=resume?(Array.isArray(job.failures)?job.failures:[]):[];await store.persistJob(job);
 
-    const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),failures=[],selectable=[],stable=[];
+    const models=await store.loadModels(),active=models.filter(m=>m.state==='Activa'),failures=job.failures,selectable=[],stable=[];
     for(const m of active){
       const problem=store.configurationProblem(m),op=store.operationalState(m);
       if(problem||op==='Error de configuración'){
@@ -301,27 +303,32 @@ async function runReview(job,articleText){
       job.providerStatuses[m.id]={name:m.name,provider:m.provider,status:'Disponible',message:'',updatedAt:new Date().toISOString()};
       if(store.isModelSelectable(m))(isStableBackup(m)?stable:selectable).push(m);
     }
-    job.failures=failures;await store.persistJob(job);
-    if(!selectable.length&&!stable.length){
-      const researchJob=/^99\d{8}$/.test(String(job.cedula||''));
-      job.status='incomplete';job.step=6;job.message=researchJob?'No hay revisores operativos en este momento. La revisión no pudo iniciarse.':'No hay revisores operativos en este momento. Tu intento no fue descontado.';
+    const lanes=hybrid.REVIEW_LANES;
+    successes=resume?restorePartialSuccesses(job.result?.partialSuccesses,models):[];
+    const pendingLanes=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
+    job.reviewers=successes.length;job.failures=failures;await store.persistJob(job);
+    if(pendingLanes.length&& !selectable.length&&!stable.length){
+      const researchJob=/^99\d{8}$/.test(String(job.cedula||'')),missing=pendingLanes.map(l=>l.label).join(', ');
+      job.status='incomplete';job.step=6;job.consumesAttempt=false;
+      job.result={partial:true,automatic,partialSuccesses:serializePartialSuccesses(successes)};
+      job.message=researchJob?`No hay revisores operativos para completar: ${missing}. Los carriles ya finalizados permanecen guardados.`:`No hay revisores operativos para completar: ${missing}. Tu intento no fue descontado.`;
       await store.persistJob(job);return;
     }
 
-    const lanes=hybrid.REVIEW_LANES,successes=[],attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()])),allocations=new Map(),reserved=new Set();
-    for(const lane of lanes){
+    const attemptedByLane=new Map(lanes.map(l=>[l.id,new Set()])),allocations=new Map(),reserved=new Set();
+    for(const lane of pendingLanes){
       const ranked=rankedForLane(selectable,lane),primary=ranked.find(m=>!reserved.has(m.id))||ranked[0]||null;
       if(primary)reserved.add(primary.id);allocations.set(lane.id,{primary,hedge:null});
     }
     const hedgeReserved=new Set(reserved);
-    for(const lane of lanes){
+    for(const lane of pendingLanes){
       const primary=allocations.get(lane.id).primary;
       const hedge=rankedForLane(selectable,lane).find(m=>m.id!==primary?.id&&!hedgeReserved.has(m.id))||null;
       if(hedge)hedgeReserved.add(hedge.id);allocations.get(lane.id).hedge=hedge;
     }
 
-    job.message='Evaluando los 3 carriles académicos con revisores especializados.';await store.persistJob(job);
-    const initial=await Promise.all(lanes.map(async lane=>{const {primary,hedge}=allocations.get(lane.id);return runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,attemptedByLane.get(lane.id));}));
+    job.message=resume?`Reintentando únicamente ${pendingLanes.length} carril(es) pendiente(s); ${successes.length} ya están conservados.`:'Evaluando los 3 carriles académicos con revisores especializados.';await store.persistJob(job);
+    const initial=await Promise.all(pendingLanes.map(async lane=>{const {primary,hedge}=allocations.get(lane.id);return runHedgedPair(job,lane,primary,hedge,clean,failures,automatic,attemptedByLane.get(lane.id));}));
     for(const out of initial)if(out)successes.push(out);
 
     let unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id)),successfulIds=new Set(successes.map(s=>s.model.id));
@@ -361,9 +368,10 @@ async function runReview(job,articleText){
     if(unresolved.length||successes.length<3){
       const researchJob=/^99\d{8}$/.test(String(job.cedula||'')),missing=unresolved.map(l=>l.label).join(', ');
       job.status='incomplete';job.step=6;job.consumesAttempt=false;
+      job.result={partial:true,automatic,partialSuccesses:serializePartialSuccesses(successes)};
       job.message=researchJob
-        ?`Revisión parcialmente completada. Quedó pendiente: ${missing}. Los otros carriles sí se conservaron durante esta ejecución; puedes reintentar cuando los proveedores estén disponibles.`
-        :`Revisión parcialmente completada. Quedó pendiente: ${missing}. Tu intento no fue descontado.`;
+        ?`Revisión parcialmente completada. Quedó pendiente: ${missing}. Los carriles completados quedaron guardados y el próximo reintento procesará solo lo pendiente.`
+        :`Revisión parcialmente completada. Quedó pendiente: ${missing}. Tu intento no fue descontado y los carriles completos quedaron guardados.`;
       await store.persistJob(job);return;
     }
 
