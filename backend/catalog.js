@@ -28,7 +28,8 @@ const DEFAULT_MODELS = [
   id:`model-${i+1}`,
   name:m[0], provider:m[1], reviewType:m[2], specialty:m[2], level:m[3],
   model:m[4], endpoint:m[5], maxInputChars:m[6], priority:m[7],
-  weight:1, state:'Activa', timeout:90, temperature:.15, tokens:6000, prompt:''
+  weight:1, state:'Activa', timeout:90, temperature:.15, tokens:6000, prompt:'',
+  stableBackup:m[2]==='Respaldo dinámico'
 }));
 
 module.exports = { RUBRIC, DEFAULT_MODELS };

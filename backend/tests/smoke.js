@@ -15,12 +15,20 @@ assert.strictEqual(matches.length,47,'Deben existir 47 microcriterios.');
 assert.strictEqual(matches.reduce((sum,m)=>sum+Number(m[1]),0),100,'Los microcriterios deben sumar 100 puntos.');
 assert.ok(hybrid.includes('.slice(0,5)'), 'La salida final debe limitar comentarios prioritarios.');
 assert.ok(hybrid.includes('modelFamily'), 'La verificación crítica debe distinguir familias de modelos.');
+assert.ok(hybrid.includes('missingLaneMicrocriteria'), 'La revisión debe poder detectar y reparar microcriterios faltantes.');
+assert.ok(hybrid.includes('providerContextBudget'), 'Cada proveedor debe respetar un presupuesto de contexto.');
 
 const server=read('server-v4.js');
 assert.ok(!/ADMIN_LOGIN_HASH=process\.env\.ADMIN_LOGIN_HASH\|\|['"][a-f0-9]{64}/i.test(server),'No debe existir hash administrativo fallback.');
 assert.ok(server.includes("url.pathname==='/student/login'"),'Debe existir login de estudiante.');
 assert.ok(server.includes('reserveStudentJob(job)'), 'Los intentos deben reservarse de forma atómica.');
 assert.ok(server.includes("verifySession(bearer(req),['student','research'])"), 'Las revisiones deben exigir sesión.');
+assert.ok(server.includes('FINAL_RECOVERY_DELAY_MS'), 'Debe existir recuperación final de carriles sin repetir los ya completados.');
+assert.ok(server.includes('laneProgress(job)'), 'El estado público debe informar el progreso por carril.');
+
+const ai=read('ai.js');
+assert.ok(ai.includes('Entrada excedida'), 'Los límites de contexto/tokens deben clasificarse por separado.');
+assert.ok(ai.includes('HTTP ${status}:'), 'Los errores de proveedor deben conservar el código HTTP.');
 
 const store=read('store.js');
 assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(status)"),'Procesando no debe contabilizarse como fallo.');
