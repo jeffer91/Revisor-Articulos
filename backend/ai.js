@@ -82,10 +82,14 @@ async function fetchWithTimeout(url,options,timeoutMs,externalSignal=null){
   try{return await fetch(url,{...options,signal:controller.signal})}
   finally{clearTimeout(timer);externalSignal?.removeEventListener?.('abort',abort)}
 }
-function providerError(data,status){return String(data?.error?.message||data?.errors?.[0]?.message||data?.message||data?.detail||`HTTP ${status}`)}
+function providerError(data,status){
+  const detail=String(data?.error?.message||data?.errors?.[0]?.message||data?.message||data?.detail||'Error del proveedor');
+  return `HTTP ${status}: ${detail}`;
+}
 function classifyFailure(message){
   const s=String(message||'');
   if(/sin api key|falta el account id|falta el endpoint|falta el identificador/i.test(s))return 'Sin configurar';
+  if(/request too large|context length|maximum context|input too long|too many tokens|requested\s+\d+.*tokens|tokens per minute/i.test(s))return 'Entrada excedida';
   if(/408|429|500|502|503|504|high demand|temporar|overload|capacity|timeout|abort|rate limit/i.test(s))return 'Saturada';
   return 'Error';
 }
