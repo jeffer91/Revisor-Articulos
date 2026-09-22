@@ -126,7 +126,12 @@ function failureSummary(job){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const HEDGE_DELAY_MS=22000;
 const FINAL_RECOVERY_DELAY_MS=25000;
-const isInputLimitError=message=>/request too large|context length|maximum context|input too long|too many tokens|requested\s+\d+.*tokens|tokens per minute/i.test(String(message||''));
+const isInputLimitError=message=>{
+  const s=String(message||'');
+  if(/request too large|context length|maximum context|input too long|too many tokens/i.test(s))return true;
+  const limit=Number(s.match(/\bLimit\s+(\d+)/i)?.[1]||0),requested=Number(s.match(/\bRequested\s+(\d+)/i)?.[1]||0);
+  return limit>0&&requested>limit;
+};
 
 async function setProvider(job,model,status,message='',latencyMs=null,lane=null){
   const key=lane?.id?`${model.id}:${lane.id}`:model.id;
