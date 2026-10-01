@@ -31,6 +31,7 @@ assert.ok(server.includes('learning.saveExternalPrediction'),'Las predicciones e
 assert.ok(server.includes('reserveStudentJob(job)'), 'Los intentos deben reservarse de forma atómica.');
 assert.ok(server.includes("verifySession(bearer(req),['student','research'])"), 'Las revisiones deben exigir sesión.');
 assert.ok(server.includes('FINAL_RECOVERY_DELAY_MS'), 'Debe existir recuperación final de carriles sin repetir los ya completados.');
+assert.ok(server.includes('if(out?.ok){successes.push(out);break;}'), 'La recuperación final nunca debe tratar un intento fallido como revisión exitosa.');
 assert.ok(server.includes('laneProgress(job)'), 'El estado público debe informar el progreso por carril.');
 assert.ok(server.includes('serializePartialSuccesses'), 'Los carriles completados deben persistirse cuando una revisión queda parcial.');
 assert.ok(server.includes("/retry$/i"), 'Debe existir una ruta para reanudar una revisión parcial.');

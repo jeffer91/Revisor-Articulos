@@ -374,7 +374,7 @@ async function runReview(job,articleText,{resume=false}={}){
         for(const model of pool){
           job.message=`Recuperación final de "${lane.label}" con contexto compacto.`;await store.persistJob(job);
           const out=await attemptProvider(job,model,clean,failures,lane,automatic,null,true);
-          if(out){successes.push(out);break;}
+          if(out?.ok){successes.push(out);break;}
         }
       }
       unresolved=lanes.filter(l=>!successes.some(s=>s.lane.id===l.id));
