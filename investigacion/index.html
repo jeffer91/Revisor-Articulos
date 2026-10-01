@@ -12,7 +12,11 @@
     <div class="brand-strip"></div>
     <header class="topbar"><div class="topbar-inner">
       <div class="brand"><img src="../assets/logo.svg" alt="ITSQMET"><div class="brand-text"><strong>Revisión Académica</strong><span>Investigación</span></div></div>
-      
+      <nav class="top-nav" aria-label="Laboratorio de investigación">
+        <a href="#review" data-research-view="upload" class="active">Nueva revisión</a>
+        <a href="#learning" data-research-view="learning">Aprendizaje</a>
+        <a href="#dataset" data-research-view="dataset">Dataset</a>
+      </nav>
     </div></header>
 
     <main class="container">
@@ -64,6 +68,29 @@
             <div><h3>Comentarios prioritarios</h3><div id="observations-result"></div></div>
           </div>
         </div>
+        <div class="card" style="margin-top:18px">
+          <div class="page-title" style="margin-bottom:0"><div><h3>Motor ITSQMET en modo sombra</h3><p>Compara sus 47 predicciones con la revisión externa. No modifica la nota.</p></div><button class="btn btn-gold" id="open-learning-current">Comparar y validar</button></div>
+        </div>
+      </section>
+
+      <section id="view-learning" class="section">
+        <div class="page-title"><div><h1>Aprendizaje supervisado</h1><p>Valida discrepancias entre el motor ITSQMET y la evaluación externa. Solo tu decisión humana entra al dataset.</p></div><button class="btn btn-outline" data-research-view="upload">Nueva revisión</button></div>
+        <div class="grid grid-4" id="learning-stats"></div>
+        <div class="card" style="margin-top:18px">
+          <div class="toolbar"><strong>Revisiones de investigación</strong><span class="spacer"></span><button class="btn btn-outline btn-sm" id="refresh-learning">Actualizar</button></div>
+          <div id="learning-jobs" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" id="learning-detail-card" style="margin-top:18px">
+          <div class="toolbar"><div><strong id="learning-detail-title">Comparación</strong><div class="small muted" id="learning-detail-meta"></div></div><span class="spacer"></span><label class="small"><input type="checkbox" id="only-disagreements"> Solo discrepancias</label></div>
+          <div class="alert alert-info" style="margin-bottom:14px"><div>i</div><div><strong>Modo sombra</strong><div class="small">ITSQMET v0.1 aprende de señales textuales. La evaluación externa sigue siendo la referencia operativa; el dato de entrenamiento nace únicamente cuando un investigador guarda una validación.</div></div></div>
+          <div id="learning-comparison" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="view-dataset" class="section">
+        <div class="page-title"><div><h1>Dataset validado</h1><p>Ejemplos creados por decisiones humanas, versionados con la rúbrica utilizada.</p></div><button class="btn btn-outline" id="refresh-dataset">Actualizar</button></div>
+        <div class="grid grid-4" id="dataset-stats"></div>
+        <div class="card" style="margin-top:18px"><div id="dataset-table" class="table-wrap"></div></div>
       </section>
     </main>
   </div>

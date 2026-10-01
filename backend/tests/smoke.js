@@ -24,6 +24,10 @@ assert.ok(server.includes("url.pathname==='/student/login'"),'Debe existir login
 assert.ok(server.includes("url.pathname==='/research/session'"),'Investigación debe crear sesión automática sin login.');
 assert.ok(!server.includes("url.pathname==='/research/login'"),'Investigación no debe exponer login.');
 assert.ok(!server.includes('RESEARCH_LOGIN_HASH'),'Investigación no debe depender de credenciales de acceso.');
+assert.ok(server.includes("url.pathname.startsWith('/research/lab/')"),'Investigación debe exponer el laboratorio de aprendizaje.');
+assert.ok(server.includes("verifySession(bearer(req),['research'])"),'El laboratorio debe usar la sesión anónima de investigación.');
+assert.ok(server.includes('learning.saveShadowPrediction'),'Cada artículo de investigación debe generar una predicción del motor sombra.');
+assert.ok(server.includes('learning.saveExternalPrediction'),'Las predicciones externas deben conservarse para comparación.');
 assert.ok(server.includes('reserveStudentJob(job)'), 'Los intentos deben reservarse de forma atómica.');
 assert.ok(server.includes("verifySession(bearer(req),['student','research'])"), 'Las revisiones deben exigir sesión.');
 assert.ok(server.includes('FINAL_RECOVERY_DELAY_MS'), 'Debe existir recuperación final de carriles sin repetir los ya completados.');
@@ -47,6 +51,20 @@ assert.ok(research.includes('/research/session'), 'Investigación debe obtener u
 assert.ok(!research.includes('/research/login'), 'Investigación no debe intentar iniciar sesión con usuario y PIN.');
 assert.ok(!researchHtml.includes('research-login'), 'La interfaz de Investigación no debe mostrar formulario de login.');
 assert.ok(!researchHtml.includes('research-logout'), 'La interfaz de Investigación no debe mostrar botón de salir.');
+assert.ok(research.includes('/research/lab/reviews/'), 'Investigación debe permitir comparar y validar microcriterios.');
+assert.ok(research.includes('/research/lab/dataset'), 'Investigación debe mostrar el dataset validado.');
+assert.ok(researchHtml.includes('Motor ITSQMET en modo sombra'), 'La interfaz debe explicar que el motor propio todavía no decide la nota.');
+
+const learning=read('learning-store.js');
+const shadow=read('shadow-engine.js');
+const migration=read('migrations/001_learning_lab.sql');
+assert.ok(learning.includes("source:'itsqmet-shadow'"),'El dataset debe distinguir la predicción del motor ITSQMET.');
+assert.ok(learning.includes("source:'external'"),'El dataset debe distinguir predicciones externas.');
+assert.ok(learning.includes('human_validations'),'Las decisiones humanas deben persistirse separadas de las predicciones.');
+assert.ok(learning.includes('training_examples'),'Solo las validaciones deben producir ejemplos de entrenamiento.');
+assert.ok(shadow.includes("mode:'shadow'"),'El motor propio inicial debe operar explícitamente en modo sombra.');
+assert.ok(migration.includes('rubric_versions'),'El aprendizaje debe versionar la rúbrica.');
+assert.ok(migration.includes('model_versions'),'El aprendizaje debe versionar el motor.');
 
 const store=read('store.js');
 assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(status)"),'Procesando no debe contabilizarse como fallo.');

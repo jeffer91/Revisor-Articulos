@@ -10,7 +10,20 @@ Sistema web institucional para revisión académica de artículos de titulación
 - Investigación: `https://jeffer91.github.io/Revisor-Articulos/investigacion/`
 - API: `https://revisor-articulos-api-v3.onrender.com`
 
-El frontend se publica en GitHub Pages. El backend Node.js se ejecuta en Render y persiste configuración, trabajos, revisiones e intentos en PostgreSQL.
+El frontend se publica en GitHub Pages. El backend Node.js se ejecuta en Render y persiste configuración, trabajos, revisiones e intentos en PostgreSQL. La capa de datos usa `DATABASE_URL` y es compatible con Neon Postgres.
+
+## Laboratorio de aprendizaje ITSQMET
+
+El portal de Investigación incorpora un primer circuito de aprendizaje supervisado, sin login de investigador:
+
+- crea una sesión anónima temporal automáticamente;
+- ejecuta `itsqmet-shadow-v0.1.0` sobre los 47 microcriterios sin modificar la nota productiva;
+- conserva por separado la predicción propia y las predicciones de los revisores externos;
+- permite comparar discrepancias y guardar una decisión humana por microcriterio;
+- solo una validación humana crea un ejemplo del dataset de entrenamiento;
+- versiona la rúbrica (`rubric-v4.1`) y el motor utilizado.
+
+Las tablas del laboratorio se crean desde `backend/migrations/001_learning_lab.sql`. En Neon basta configurar en el backend una `DATABASE_URL` PostgreSQL válida; el arranque registra las versiones y aplica el esquema de forma idempotente.
 
 ## Motor académico V4
 
@@ -79,7 +92,7 @@ Los estudiantes se validan desde el backend contra el registro institucional ant
 
 Los intentos estudiantiles se reservan de forma atómica en PostgreSQL para impedir revisiones simultáneas que excedan el cupo. También existe limitación temporal de inicios de revisión.
 
-El portal Investigación exige autenticación y no consume la cuota de un estudiante.
+El portal Investigación no muestra login: obtiene una sesión anónima temporal de investigación y no consume la cuota de un estudiante.
 
 ## Similitud y posible IA
 

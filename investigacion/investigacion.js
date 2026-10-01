@@ -1,10 +1,10 @@
 (() => {
-  const { api, esc } = window.Revisor;
+  const { api, esc, toast } = window.Revisor;
   const $ = s => document.querySelector(s);
   let file = null, lastArticleText = '', currentJobId = '';
 
   const show = id => {
-    ['#view-upload','#view-process','#view-result'].forEach(x=>$(x)?.classList.remove('active'));
+    ['#view-upload','#view-process','#view-result','#view-learning','#view-dataset'].forEach(x=>$(x)?.classList.remove('active'));
     $(id)?.classList.add('active');
     window.scrollTo({top:0,behavior:'smooth'});
   };
@@ -23,6 +23,57 @@
     return sessionPromise;
   }
   void ensureResearchSession().catch(err=>console.error('research session:',err));
+
+  const statuses=['Cumple','Parcial alto','Parcial','Parcial bajo','No cumple'];
+  const metric=(label,value,sub='')=>`<div class="card metric metric-accent"><div class="metric-label">${esc(label)}</div><div class="metric-value">${esc(value)}</div><div class="metric-sub">${esc(sub)}</div></div>`;
+  const statusBadge=status=>{const s=String(status||'Sin dato'),k=s==='Cumple'?'success':s==='No cumple'?'danger':s.includes('bajo')?'warning':'info';return `<span class="badge badge-${k}">${esc(s)}</span>`};
+  const evidence=value=>Array.isArray(value)?value.join(' · '):String(value||'');
+
+  async function loadLearning(jobId=''){
+    await ensureResearchSession();
+    show('#view-learning');
+    const [stats,jobs]=await Promise.all([api('/research/lab/stats'),api('/research/lab/jobs?limit=50')]);
+    $('#learning-stats').innerHTML=metric('Artículos',stats.articles,'guardados para investigación')+metric('Validados',stats.reviewed_articles,'artículos con decisión humana')+metric('Ejemplos',stats.examples,'listos para entrenamiento')+metric('Motor',stats.shadowVersion,stats.rubricVersion);
+    $('#learning-jobs').innerHTML=`<table><thead><tr><th>Artículo</th><th>Estado</th><th>Validaciones</th><th>Rúbrica</th><th></th></tr></thead><tbody>${jobs.map(j=>`<tr><td><strong>${esc(j.file_name)}</strong><div class="small muted">${new Date(j.created_at).toLocaleString('es-EC')}</div></td><td>${esc(j.status)}</td><td>${esc(j.validated)} / ${esc(stats.totalMicrocriteria)}</td><td>${esc(j.rubric_version)}</td><td><button class="btn btn-outline btn-sm" data-open-lab="${esc(j.job_id)}">Comparar</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">Todavía no hay revisiones de investigación.</td></tr>'}</tbody></table>`;
+    if(jobId)await loadLabDetail(jobId);
+  }
+
+  async function loadLabDetail(jobId){
+    const data=await api(`/research/lab/reviews/${jobId}`),card=$('#learning-detail-card');
+    card.classList.remove('hidden');card.dataset.jobId=jobId;
+    $('#learning-detail-title').textContent=data.file;
+    $('#learning-detail-meta').textContent=`${data.validated} / ${data.total} validados · ${data.shadowVersion} · ${data.rubricVersion}`;
+    renderComparison(data);
+    card.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  function renderComparison(data){
+    const only=$('#only-disagreements')?.checked;
+    const rows=(data.rows||[]).filter(r=>!only||String(r.shadow?.status||'')!==String(r.external?.status||''));
+    $('#learning-comparison').innerHTML=`<table><thead><tr><th>Microcriterio</th><th>ITSQMET sombra</th><th>Externa V4</th><th>Decisión humana</th><th>Evidencia / nota</th><th></th></tr></thead><tbody>${rows.map(r=>{
+      const selected=r.validation?.final_status||r.external?.status||'Parcial';
+      return `<tr data-micro-row="${esc(r.id)}"><td><strong>${esc(r.id)}</strong> · ${esc(r.label)}<div class="small muted">${esc(r.category)} · ${esc(r.weight)} pts</div></td><td>${statusBadge(r.shadow?.status)}<div class="small muted">conf. ${Math.round(Number(r.shadow?.confidence||0)*100)}%</div></td><td>${statusBadge(r.external?.status)}<div class="small muted">${esc(evidence(r.external?.evidence).slice(0,180))}</div></td><td><select class="select validation-status">${statuses.map(s=>`<option${s===selected?' selected':''}>${esc(s)}</option>`).join('')}</select></td><td><textarea class="textarea validation-note" rows="2" placeholder="Evidencia o nota del investigador">${esc(r.validation?.note||evidence(r.external?.evidence).slice(0,500))}</textarea></td><td><button class="btn btn-primary btn-sm save-validation">${r.validation?'Actualizar':'Validar'}</button></td></tr>`;
+    }).join('')||'<tr><td colspan="6" class="muted">No hay discrepancias con el filtro actual.</td></tr>'}</tbody></table>`;
+  }
+
+  async function saveValidation(button){
+    const row=button.closest('[data-micro-row]'),jobId=$('#learning-detail-card').dataset.jobId;
+    if(!row||!jobId)return;
+    button.disabled=true;
+    try{
+      const finalStatus=row.querySelector('.validation-status').value,note=row.querySelector('.validation-note').value;
+      await api(`/research/lab/reviews/${jobId}/validate`,{method:'POST',body:JSON.stringify({microcriterionId:row.dataset.microRow,finalStatus,evidence:note,note})});
+      toast('Validación guardada y convertida en ejemplo de entrenamiento.','success');
+      await loadLabDetail(jobId);
+    }catch(err){toast(err.message||'No se pudo guardar la validación.','danger')}finally{button.disabled=false}
+  }
+
+  async function loadDataset(){
+    await ensureResearchSession();show('#view-dataset');
+    const [stats,rows]=await Promise.all([api('/research/lab/stats'),api('/research/lab/dataset?limit=200')]);
+    $('#dataset-stats').innerHTML=metric('Ejemplos',stats.examples,'validación humana')+metric('Artículos',stats.articles,'en investigación')+metric('Microcriterios',stats.totalMicrocriteria,'rúbrica vigente')+metric('Rúbrica',stats.rubricVersion,stats.shadowVersion);
+    $('#dataset-table').innerHTML=`<table><thead><tr><th>Artículo</th><th>Microcriterio</th><th>Etiqueta humana</th><th>Extracto de entrenamiento</th><th>Versión</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.file_name)}</td><td><strong>${esc(r.microcriterion_id)}</strong><div class="small muted">${esc(r.target?.label||'')}</div></td><td>${statusBadge(r.target?.finalStatus)}</td><td>${esc(String(r.article_excerpt||'').slice(0,360))}</td><td>${esc(r.rubric_version)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">Aún no hay ejemplos validados. Abre Aprendizaje y valida microcriterios.</td></tr>'}</tbody></table>`;
+  }
 
   const setFile = f => {
     if(!f)return;
@@ -179,6 +230,20 @@
   }
 
   $('#start-review')?.addEventListener('click',startReview);
+  $('#open-learning-current')?.addEventListener('click',()=>void loadLearning(currentJobId).catch(err=>toast(err.message||'No se pudo abrir el laboratorio.','danger')));
+  $('#refresh-learning')?.addEventListener('click',()=>void loadLearning($('#learning-detail-card')?.dataset.jobId||'').catch(err=>toast(err.message||'No se pudo actualizar.','danger')));
+  $('#refresh-dataset')?.addEventListener('click',()=>void loadDataset().catch(err=>toast(err.message||'No se pudo actualizar el dataset.','danger')));
+  $('#only-disagreements')?.addEventListener('change',()=>{const jobId=$('#learning-detail-card')?.dataset.jobId;if(jobId)void loadLabDetail(jobId).catch(err=>toast(err.message||'No se pudo filtrar.','danger'))});
+  $('#learning-jobs')?.addEventListener('click',event=>{const button=event.target.closest('[data-open-lab]');if(button)void loadLabDetail(button.dataset.openLab).catch(err=>toast(err.message||'No se pudo abrir la revisión.','danger'))});
+  $('#learning-comparison')?.addEventListener('click',event=>{const button=event.target.closest('.save-validation');if(button)void saveValidation(button)});
+  document.querySelectorAll('[data-research-view]').forEach(link=>link.addEventListener('click',event=>{
+    event.preventDefault();
+    const view=link.dataset.researchView;
+    document.querySelectorAll('.top-nav [data-research-view]').forEach(x=>x.classList.toggle('active',x.dataset.researchView===view));
+    if(view==='learning')void loadLearning().catch(err=>toast(err.message||'No se pudo abrir Aprendizaje.','danger'));
+    else if(view==='dataset')void loadDataset().catch(err=>toast(err.message||'No se pudo abrir el Dataset.','danger'));
+    else show('#view-upload');
+  }));
   $('#new-review')?.addEventListener('click',()=>{
     file=null;lastArticleText='';currentJobId='';$('#selected-file').innerHTML='';$('#article-file').value='';$('#start-review').disabled=true;show('#view-upload');
   });

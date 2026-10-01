@@ -4,6 +4,8 @@ const {DEFAULT_MODELS}=require('./catalog');
 const store=require('./store');
 const ai=require('./ai');
 const hybrid=require('./hybrid');
+const learning=require('./learning-store');
+const shadow=require('./shadow-engine');
 
 const PORT=Number(process.env.PORT||10000);
 const ALLOWED_ORIGINS=(process.env.ALLOWED_ORIGINS||'https://jeffer91.github.io,http://localhost:8080,http://127.0.0.1:8080').split(',').map(x=>x.trim()).filter(Boolean);
@@ -169,6 +171,9 @@ async function attemptProvider(job,model,clean,failures,lane,automatic,signal=nu
     hybrid.validateLaneResponse(result,lane);
     const latency=Date.now()-started;
     await setProvider(job,model,'Correcta',`Carril: ${lane.label}`,latency,lane);
+    if(/^99\d{8}$/.test(String(job.cedula||''))){
+      try{await learning.saveExternalPrediction(job.id,model,lane,result?.json||result)}catch(err){console.error('learning external prediction:',err.message)}
+    }
     console.log(`[review ${job.id}] ${model.provider}/${model.name} [${lane.id}]: OK ${latency}ms`);
     return {ok:true,model,result,lane,latencyMs:latency};
   }catch(err){
@@ -288,7 +293,14 @@ async function runReview(job,articleText,{resume=false}={}){
   let successes=[],automatic=null;
   try{
     const clean=String(articleText||'').replace(/\u0000/g,' ').trim();if(clean.length<700)throw new Error('No se pudo extraer suficiente texto del artículo.');
-    automatic=hybrid.analyzeAutomatic(clean);job.step=2;job.message=resume?'Recuperando los carriles ya completados y seleccionando revisores para el pendiente.':'Validaciones automáticas completadas. Seleccionando revisores disponibles.';
+    automatic=hybrid.analyzeAutomatic(clean);
+    if(/^99\d{8}$/.test(String(job.cedula||''))){
+      try{
+        await learning.registerResearchArticle(job,clean);
+        await learning.saveShadowPrediction(job.id,shadow.review(clean,hybrid.MICROCRITERIA,automatic));
+      }catch(err){console.error('learning shadow prediction:',err.message)}
+    }
+    job.step=2;job.message=resume?'Recuperando los carriles ya completados y seleccionando revisores para el pendiente.':'Validaciones automáticas completadas. Seleccionando revisores disponibles.';
     const previousStatuses=resume?(job.providerStatuses||job.provider_statuses||{}):{};
     job.providerStatuses={...previousStatuses,automatic:{name:'Validación automática',provider:'Motor interno',status:'Correcta',message:`${automatic.wordCount} palabras · señal formal ${automatic.formalStructureScore}/6`,updatedAt:new Date().toISOString()}};
     job.failures=resume?(Array.isArray(job.failures)?job.failures:[]):[];await store.persistJob(job);
@@ -420,6 +432,19 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,{token:signSession('research','research',8*60*60*1000),expiresIn:28800},origin);
     }
 
+    if(url.pathname.startsWith('/research/lab/')){
+      const session=verifySession(bearer(req),['research']);
+      if(!session)return json(res,401,{message:'Sesión de investigación no válida.'},origin);
+      if(req.method==='GET'&&url.pathname==='/research/lab/stats')return json(res,200,await learning.stats(),origin);
+      if(req.method==='GET'&&url.pathname==='/research/lab/jobs')return json(res,200,await learning.listJobs(url.searchParams.get('limit')),origin);
+      if(req.method==='GET'&&url.pathname==='/research/lab/dataset')return json(res,200,await learning.dataset(url.searchParams.get('limit')),origin);
+      const labReview=url.pathname.match(/^\/research\/lab\/reviews\/([0-9a-f-]+)$/i);
+      if(req.method==='GET'&&labReview){const data=await learning.getLabReview(labReview[1]);return data?json(res,200,data,origin):json(res,404,{message:'Revisión de investigación no encontrada.'},origin)}
+      const validate=url.pathname.match(/^\/research\/lab\/reviews\/([0-9a-f-]+)\/validate$/i);
+      if(req.method==='POST'&&validate){const body=await readJson(req,50_000);return json(res,200,await learning.validate(validate[1],body),origin)}
+      return json(res,404,{message:'Ruta de aprendizaje no encontrada.'},origin);
+    }
+
     if(req.method==='POST'&&url.pathname==='/admin/login'){
       const body=await readJson(req),ip=clientIp(req),now=Date.now(),rec=loginAttempts.get(ip)||{count:0,until:0};
       if(rec.until>now)return json(res,429,{message:'Demasiados intentos. Intenta nuevamente en unos minutos.'},origin);
@@ -518,4 +543,4 @@ const server=http.createServer(async(req,res)=>{
   }catch(err){console.error(err);return json(res,err.status||500,{message:String(err.message||err)},origin)}
 });
 
-store.initDb().then(()=>server.listen(PORT,'0.0.0.0',()=>console.log(`Revisor Artículos API activa en ${PORT} con motor híbrido v4 resiliente, proporcional y con persistencia PostgreSQL`))).catch(err=>{console.error('No se pudo iniciar el backend:',err);process.exit(1)});
+store.initDb().then(()=>learning.initLearningDb()).then(()=>server.listen(PORT,'0.0.0.0',()=>console.log(`Revisor Artículos API activa en ${PORT} con motor híbrido v4 y laboratorio ITSQMET`))).catch(err=>{console.error('No se pudo iniciar el backend:',err);process.exit(1)});
