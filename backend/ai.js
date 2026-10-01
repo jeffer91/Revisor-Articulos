@@ -66,7 +66,10 @@ function extractJson(text){
 }
 function validateReviewShape(x){
   if(!x||typeof x!=='object')throw new Error('Respuesta académica inválida.');
-  if(!Array.isArray(x.categories)||x.categories.length<1)throw new Error('La IA no devolvió categorías evaluables.');
+  const hasCategories=Array.isArray(x.categories)&&x.categories.length>0;
+  const hasMicrocriteria=Array.isArray(x.microcriteria)&&x.microcriteria.length>0;
+  if(!hasCategories&&!hasMicrocriteria)throw new Error('La IA no devolvió una estructura académica evaluable.');
+  if(!Array.isArray(x.categories))x.categories=[];
   if(!Array.isArray(x.observations))x.observations=[];
   return x;
 }

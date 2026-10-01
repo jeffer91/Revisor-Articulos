@@ -42,6 +42,7 @@ assert.ok(ai.includes('Entrada excedida'), 'Los límites de contexto/tokens debe
 assert.ok(ai.includes('hardInputLimit'), 'Debe distinguirse un límite duro de entrada de una saturación TPM temporal.');
 assert.ok(ai.includes('requested>limit'), 'Solo una solicitud que supera por sí sola el límite debe tratarse como entrada excedida.');
 assert.ok(ai.includes('HTTP ${status}:'), 'Los errores de proveedor deben conservar el código HTTP.');
+assert.ok(ai.includes('hasMicrocriteria'), 'El parser debe aceptar respuestas V4 basadas en microcriterios sin exigir categorías heredadas.');
 
 const research=fs.readFileSync(path.join(root,'..','investigacion','investigacion.js'),'utf8');
 const researchHtml=fs.readFileSync(path.join(root,'..','investigacion','index.html'),'utf8');
@@ -69,6 +70,7 @@ assert.ok(migration.includes('model_versions'),'El aprendizaje debe versionar el
 const store=read('store.js');
 assert.ok(store.includes("['Procesando','Disponible','Cancelada'].includes(status)"),'Procesando no debe contabilizarse como fallo.');
 assert.ok(store.includes('FOR UPDATE'),'La reserva de intentos debe usar bloqueo transaccional.');
+assert.ok(store.includes("INTERVAL '2 minutes'"),'Una saturación temporal no debe bloquear un proveedor durante diez minutos en el primer fallo.');
 
 console.log('Smoke tests V4: OK');
 

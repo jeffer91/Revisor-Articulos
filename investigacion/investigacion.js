@@ -169,7 +169,9 @@
       $('#process-progress').style.width=`${Math.max(18,Math.round(completed/3*100))}%`;
       const details=(status.failures||[]).slice(-5).map(x=>`<li><strong>${esc(x.lane||'Carril')}</strong> · ${esc(x.provider||'Proveedor')} / ${esc(x.model||'Modelo')}: ${esc(x.status||'Error')}</li>`).join('');
       const retryLabel=partial?'Reintentar solo lo pendiente':'Reintentar revisión';
-      $('#process-error').innerHTML=`<div class="alert ${partial?'alert-warning':'alert-danger'}"><div>!</div><div><strong>${partial?'Quedó un carril pendiente':'La revisión se interrumpió'}</strong><div class="small">${esc(status.message||'No fue posible completar la revisión.')}</div>${details?`<ul class="small" style="margin:10px 0 0 18px">${details}</ul>`:''}<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="retry-review">${retryLabel}</button><button class="btn btn-outline btn-sm" id="back-upload">Volver</button></div></div></div>`;
+      const pendingCount=(status.pendingLanes||[]).length;
+      const pendingLabel=pendingCount===1?'Quedó un carril pendiente':`Quedaron ${pendingCount||'varios'} carriles pendientes`;
+      $('#process-error').innerHTML=`<div class="alert ${partial?'alert-warning':'alert-danger'}"><div>!</div><div><strong>${partial?pendingLabel:'La revisión se interrumpió'}</strong><div class="small">${esc(status.message||'No fue posible completar la revisión.')}</div>${details?`<ul class="small" style="margin:10px 0 0 18px">${details}</ul>`:''}<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="retry-review">${retryLabel}</button><button class="btn btn-outline btn-sm" id="back-upload">Volver</button></div></div></div>`;
       $('#retry-review')?.addEventListener('click',()=>void retryPendingReview());
       $('#back-upload')?.addEventListener('click',()=>show('#view-upload'));
       return;

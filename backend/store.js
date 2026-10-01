@@ -208,8 +208,8 @@ async function updateModelReviewHealth(model,status,message='',jobId='',latencyM
     consecutive_failures=consecutive_failures+1,
     circuit_open_until=CASE
       WHEN $6 THEN NULL
-      WHEN $5 THEN NOW()+CASE WHEN consecutive_failures>=1 THEN INTERVAL '20 minutes' ELSE INTERVAL '10 minutes' END
-      WHEN consecutive_failures>=1 THEN NOW()+INTERVAL '15 minutes'
+      WHEN $5 THEN NOW()+CASE WHEN consecutive_failures>=2 THEN INTERVAL '5 minutes' ELSE INTERVAL '2 minutes' END
+      WHEN consecutive_failures>=2 THEN NOW()+INTERVAL '3 minutes'
       ELSE circuit_open_until END,
     configuration_error=CASE WHEN $6 THEN TRUE ELSE configuration_error END,
     configuration_error_message=CASE WHEN $6 THEN $3 ELSE configuration_error_message END,
